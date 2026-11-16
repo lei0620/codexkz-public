@@ -1,0 +1,15 @@
+{
+  "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
+  "name": "leix-panel-probe",
+  "version": "0.5.1",
+  "description": "纯本机当前聊天白板，按宿主聊天标识准确关联项目与执行结果。",
+  "extensions": {
+    "com.openai": {
+      "requires_local_executor": true,
+      "interface": {
+        "displayName": "本聊天白板",
+        "shortDescription": "准确识别当前聊天，查看项目任务与结果"
+      }
+    }
+  }
+}

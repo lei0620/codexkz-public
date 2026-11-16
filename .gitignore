@@ -1,0 +1,25 @@
+data/
+.playwright-cli/
+*.log
+node_modules/
+.env
+.env.*
+!.env.example
+release/
+备份/
+*.tmp
+.panel-test/
+.http-check-*/
+output/playwright/
+
+# Local visual review contains machine-specific screenshot references.
+/design-qa.md
+
+# Local SQLite storage and sidecar files never enter source Git.
+*.sqlite
+*.sqlite-journal
+*.sqlite-wal
+*.sqlite-shm
+
+# Reproducible local plugin UI artifacts
+/plugins/leix-panel-probe/ui/

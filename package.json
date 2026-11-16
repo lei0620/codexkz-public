@@ -1,0 +1,13 @@
+{
+  "name": "codexkz",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=22.13.0"
+  },
+  "scripts": {
+    "start": "node panel-runner.mjs",
+    "check": "node scripts/check.mjs",
+    "package:plugin": "node scripts/package-local-plugin.mjs"
+  }
+}
