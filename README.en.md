@@ -1,8 +1,8 @@
 [简体中文](README.md) · English
 
-# Codex Project Panel
+# Paiban
 
-Manage multiple Codex projects from a local board on Windows. Assign tasks to the appropriate Codex chat, track execution, read replies, and review results from the panel.
+A local task board for Codex on Windows. Assign tasks to the appropriate Codex chat, track execution, read replies, and review results from the panel.
 
 [Quick start](#quick-start) · [Updates](#updates) · [License](LICENSE.md#english) · [Support development](#support-development)
 
@@ -41,7 +41,7 @@ The service listens on the loopback interface only. The source version stores ta
 
 ## License
 
-Noncommercial use is free. You are welcome to modify the project and share original or modified versions for noncommercial purposes. When sharing, credit “Codex Project Panel (CodexKZ),” link to the official project page when publicly available, and preserve the copyright notice and license. Only commercial use requires prior written permission. Contact the developer on WeChat at `Mr_Lei0620`. See the [Noncommercial Use License](LICENSE.md#english).
+Noncommercial use is free. You are welcome to modify the project and share original or modified versions for noncommercial purposes. When sharing, credit Paiban, link to the [original project](https://github.com/lei0620/codexkz-public), and preserve the copyright notice and license. Only commercial use requires prior written permission. Contact the developer on WeChat at `Mr_Lei0620`. See the [Noncommercial Use License](LICENSE.md#english).
 
 ## Support development
 

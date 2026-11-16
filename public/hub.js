@@ -307,7 +307,7 @@ function renderProductUpdate(service={}){
   const release=service.releaseCheck??{},maintenance=service.maintenance,waiting=maintenance?.status==='waiting'&&maintenance.kind==='product-update';
   const sourceMode=release.supported===false&&release.status!=='error';
   $('updateVersion').hidden=!sourceMode&&!release.supported&&!service.productVersion;
-  $('updateVersion').textContent=sourceMode?'源码运行版':'当前版本：'+(service.productVersion??'未知')+(release.available?' · 可升级至 '+release.version:'');
+  $('updateVersion').textContent='派板 · Paiban · '+(sourceMode?'源码运行版':'当前版本：'+(service.productVersion??'未知')+(release.available?' · 可升级至 '+release.version:''));
   $('sourceUpdate').hidden=!sourceMode;
   if(!sourceMode){$('sourceUpdateHelp').hidden=true;$('sourceUpdate').setAttribute('aria-expanded','false');}
   $('checkUpdate').hidden=!release.supported;
