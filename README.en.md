@@ -32,8 +32,9 @@ You need Windows, Node.js 22.13 or later, PowerShell 7, and a running Codex desk
 
 ## Updates
 
-- **Source version:** Open Settings → About & Updates and select View update instructions. Obtain the new version from the original source, back up `data/`, and check any local changes before updating. Reload it using Advanced Settings → Restart Panel.
-- **Installed version:** The same section shows the installed version and Check for updates. If an update is found, read the release notes and select Upgrade. The installer and production update feed are pending release acceptance.
+Paiban is currently available as source code on GitHub. Back up `data/` and review any local changes before updating. Get the latest source from this repository and reload it using Settings → Advanced Settings → Restart Panel. For guidance, open Settings → About & Updates → View update instructions.
+
+The Windows installer and in-app upgrades are pending release.
 
 ## Data and compatibility
 
