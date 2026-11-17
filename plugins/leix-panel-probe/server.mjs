@@ -2,7 +2,8 @@ import {readFileSync} from 'node:fs';
 import {LocalPanelAdapter} from './adapter.mjs';
 import {EntryTickets} from './entry-tickets.mjs';
 
-const adapter=new LocalPanelAdapter(),tickets=new EntryTickets(),mimeType='text/html;profile=mcp-app',version='0.5.1';
+const installedPort=process.env.PAIBAN_PLUGIN_PORT;
+const adapter=new LocalPanelAdapter(installedPort?{origin:'http://127.0.0.1:'+installedPort}:undefined),tickets=new EntryTickets(),mimeType='text/html;profile=mcp-app',version='0.5.1';
 const resourceCache=new Map();
 const configuredMode=process.argv.find(arg=>arg.startsWith('--mode='))?.slice(7);
 if(!['global','thread'].includes(configuredMode))throw Error('A fixed local entry mode is required');

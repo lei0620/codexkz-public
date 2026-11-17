@@ -1,7 +1,7 @@
-import {verifyReleaseManifest,selectReleaseAsset} from './release-manifest.mjs';
+import {RELEASE_REPOSITORY,verifyReleaseManifest,selectReleaseAsset} from './release-manifest.mjs';
 import {fetchReleaseResponse} from './release-http.mjs';
 
-export const RELEASE_MANIFEST_URL='https://github.com/lei0620/codexkz-releases/releases/latest/download/manifest.json';
+export const RELEASE_MANIFEST_URL='https://github.com/'+RELEASE_REPOSITORY+'/releases/latest/download/manifest.json';
 const MAX_ENVELOPE=96*1024;
 
 export async function checkRelease({publicKey,version,platform,arch,fetchImpl=fetch,timeoutMs=15000}){

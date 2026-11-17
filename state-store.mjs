@@ -22,8 +22,10 @@ export class StateStore{
     this.#durable=raw===null?'':JSON.stringify(raw);
     return initialize(raw);
   }
-  activate(value){
-    this.#normalize(value);const committed=this.#commit(value,true);return committed?.then?committed.then(()=>this.view()):this.view();
+  activate(value,{requireUnchanged=false}={}){
+    this.#normalize(value);
+    if(requireUnchanged&&JSON.stringify(value)!==this.#durable)throw failure('UPGRADE_DATA_CHANGE','新版本启动需要修改运行数据，未通过可回退升级检查');
+    const committed=this.#commit(value,true);return committed?.then?committed.then(()=>this.view()):this.view();
   }
   view(){return this.#current;}
   acceptCommittedTask(task,revision){

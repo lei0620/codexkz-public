@@ -17,6 +17,36 @@ function sourceReminderDismissed(projectId){
 }
 const values=form=>Object.fromEntries(new FormData(form));
 const input=(id,label,name,type='text')=>`<label for="${id}">${label}</label><input id="${id}" name="${name}" type="${type}" required>`;
+const setupSteps=[
+  {key:'connection',title:'连接 Codex',target:'findInstances',help:'打开 Codex 桌面应用，进入派板所在项目的聊天。查找本机实例，填写该聊天的真实 ID 后保存。',prompt:'帮我配置本机派板的桌面连接。请先核对当前 Codex 桌面实例和派板项目的实际目录。使用当前聊天的真实 CODEX_THREAD_ID 或 Codex 提供的聊天链接核对会话 ID，找不到时明确告诉我如何取得。在派板「设置 → 高级设置 → 桌面连接」点击「查找实例」，指引我选择已核实的本机实例、填入 ID 并保存。只验证能读取正确的项目和聊天，别发送任务。'},
+  {key:'device',title:'设置电脑与总控项目',target:'deviceLabel',help:'给这台电脑取一个容易区分的名字，选择负责汇总项目的总控项目。',prompt:'帮我设置派板的电脑名称和总控项目。请先确认本机派板已连接 Codex，列出当前可见的本机项目，让我选一个作为总控，并确认这台电脑的显示名称。告诉我在「设置 → 这台电脑 → 更改电脑与总控」填什么，保存后核对显示的名称和总控项目。'},
+  {key:'project',title:'核对当前项目关联',target:'logicalName',help:'派板会识别源码仓库。需要手动关联时，核对当前聊天目录和逻辑项目名称。',prompt:'帮我核对派板当前项目的源码目录和逻辑项目身份。先在已确认的项目目录用 git rev-parse --show-toplevel 和 git remote -v 检查实际仓库。打开派板「设置 → 当前项目 → 调整项目身份」核对识别结果；有歧义时向我指出冲突并确认目标目录后再保存。保留已有项目身份和聊天，不执行任务。'},
+  {key:'backup',title:'核对本机备份目录',target:'backupRoot',help:'安装时已选择目录的用户可直接核对。首次配置时，选择本机专用备份目录。',prompt:'帮我配置派板的本机备份目录。请先核对派板实际的程序和数据位置，再让我选择一个单独的本机绝对路径，验证没有重定向及目录重叠。告诉我在「设置 → 高级设置 → 备份位置」填什么，保存后重新读取核对。保留已有备份和运行数据。'},
+  {key:'sync',title:'配置私有仓库同步（可选）',target:'syncRepo',help:'需要跨电脑同步时再设置。准备自己的 GitHub 私有仓库，并通过 GitHub CLI 登录。首次保存可关闭自动同步。',prompt:'帮我配置派板的跨电脑同步。请先运行 gh auth status 检查本机 GitHub CLI 登录，让我确认要用的仓库，再用 gh repo view <账号>/<仓库> --json nameWithOwner,visibility 核实它为 PRIVATE。如果需要新建，先确认账户和仓库名称，再用 gh repo create <账号>/<仓库> --private。告诉我在「设置 → 待办同步 → 同步设置」填写的 owner/repo 和 panel-tasks 分支，并核对我选择的同步范围。保存时保持自动同步关闭，等我确认后再启用。不要上传整个 data 目录或选择公开仓库。'}
+];
+
+function setupGuideMarkup(){
+  return `<details id="setupGuide" class="workspace-advanced"><summary>首次设置</summary>${setupSteps.map(step=>`<details class="workspace-option" data-setup-step="${step.key}"><summary>${step.title}</summary><p class="hint">${step.help}</p><div class="setup-guide-actions"><button type="button" data-setup-target="${step.target}" aria-label="打开配置：${step.title}">打开配置</button><button type="button" data-setup-copy aria-label="复制 Codex 指令：${step.title}">复制 Codex 指令</button></div><textarea hidden readonly rows="5" aria-label="${step.title}的 Codex 指令"></textarea><p class="hint" role="status"></p></details>`).join('')}</details>`;
+}
+
+function initSetupGuide(openSettings){
+  $('setupGuideEntry').onclick=()=>{openSettings(true);$('setupGuide').open=true;const summary=$('setupGuide').querySelector('summary');summary.focus();};
+  $('setupGuide').addEventListener('click',async event=>{
+    const jump=event.target.closest('[data-setup-target]');
+    if(jump){
+      const target=$(jump.dataset.setupTarget);
+      for(let panel=target.closest('details');panel;panel=panel.parentElement.closest('details'))panel.open=true;
+      target.focus({preventScroll:true});target.scrollIntoView({block:'center'});return;
+    }
+    const copy=event.target.closest('[data-setup-copy]');
+    if(!copy)return;
+    const row=copy.closest('[data-setup-step]'),step=setupSteps.find(item=>item.key===row.dataset.setupStep);
+    const field=row.querySelector('textarea'),status=row.querySelector('[role="status"]');
+    field.value=step.prompt;
+    try{await navigator.clipboard.writeText(step.prompt);status.textContent='已复制，粘贴到 Codex 聊天即可。';}
+    catch{field.hidden=false;field.focus();field.select();status.textContent='指令已选中，按 Ctrl+C 复制。';}
+  });
+}
 // The native launcher and the existing board dialog share the same operation.
 // A global app has no source-chat context, so its selections start empty.
 export function initSidebarOpener(api,getCurrent,{standalone=false}={}){
@@ -69,7 +99,7 @@ export function initHub(context){
   api=context;initVersions(context);initSidebarOpener(api,()=>current);initWorkflowInitialization(context);
   const host=document.createElement('section');host.id='workspaceHub';
   host.innerHTML=`<nav class="hub-nav" aria-label="工作区导航"><div class="hub-switch"><a id="controlLink">总控</a><a id="ownBoardLink">项目</a><a id="referencesLink">资料</a></div><div class="workspace-tools"><button id="workspaceToggle" class="device-status-button" aria-controls="workspaceConfig" aria-expanded="false" aria-label="工作区设置"><svg class="device-icon" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="4" width="18" height="13" rx="2"/><path d="M8 21h8M12 17v4"/></svg><span class="device-divider" aria-hidden="true"></span><span id="workspaceLabel">未设置电脑</span><span id="updateAvailable" hidden> · 有更新</span><span class="device-divider" aria-hidden="true"></span></button></div></nav>
-    <p id="identityReminder" class="identity-reminder" role="status"></p>
+    <button type="button" id="setupGuideEntry" hidden>开始设置</button><p id="identityReminder" class="identity-reminder" role="status"></p>
     <details id="workspaceConfig" class="settings"><summary>工作区设置</summary><div class="workspace-panel-heading"><h1 id="workspaceHeading" tabindex="-1">设置</h1><button type="button" id="closeWorkspace">返回</button></div><p id="workspaceSettingsNotice" role="status" aria-live="polite" hidden></p><p id="workspaceContext" hidden></p><div class="settings-body hub-settings">
     <form id="deviceForm"><h3>这台电脑</h3><p id="deviceSummary" class="hint"></p><details id="deviceSettings" class="workspace-option"><summary>更改电脑与总控</summary>${input('deviceLabel','电脑名称','deviceLabel')}<label for="controllerProject">总控项目</label><select id="controllerProject" name="controllerProjectId" required></select><button class="primary">保存</button></details></form>
     <form id="syncForm"><h3>待办同步</h3><p id="syncOverview" class="hint" role="status"></p><div class="workspace-sync-actions"><label class="check"><input id="syncAutoEnabled" name="autoEnabled" type="checkbox" checked>自动同步</label><button type="button" id="syncNow">立即同步</button></div><details id="syncConfigDetails" class="workspace-option"><summary id="syncConfigSummary">同步设置</summary><p id="syncStatus" class="hint" role="status"></p><div id="syncConflicts"></div><p id="syncInbox" class="hint"></p>${input('syncRepo','GitHub 私有仓库','repo')}${input('syncBranch','同步分支','branch')}<label class="check"><input id="syncRichFields" name="includeRichFields" type="checkbox" checked>包含版块、依赖、标签与附件</label><p class="hint">自动同步适用于待办。立即同步还会同步当前项目的看板和资料。</p><label class="check"><input name="confirmed" type="checkbox" required>确认使用此私有仓库保存待办及所选附件</label><button>保存同步设置</button></details></form>
@@ -90,7 +120,8 @@ export function initHub(context){
   if(context.diagnosticsSupported)void import('./diagnostics.js').then(module=>{diagnosticUI=module;module.initDiagnostics(context);if(current?.state)module.updateDiagnostics(current.state,current.projectId);}).catch(error=>api.notice(error.message,true));
   const topNav=host.querySelector('.hub-nav'),tools=topNav.querySelector('.workspace-tools');document.querySelector('.app-bar .brand').after(topNav);document.querySelector('.app-bar').append(tools);$('workspaceToggle').append($('connection'));tools.append(document.querySelector('.project-sync-shortcut'));const refresh=$('refresh');refresh.type='button';refresh.className='connection-refresh';refresh.setAttribute('aria-label','刷新连接');refresh.title='重新读取项目、对话和连接状态';refresh.append(document.createTextNode('刷新连接'));$('findInstances').before(refresh);document.querySelector('.connection-wrap').remove();
   // Move the existing controls, preserving their handlers and drafts.
-  $('workspaceConfig').querySelector('.hub-settings').prepend($('settings'));$('settings').open=true;
+  const settingsBody=$('workspaceConfig').querySelector('.hub-settings');
+  settingsBody.prepend($('settings'));settingsBody.insertAdjacentHTML('afterbegin',setupGuideMarkup());$('settings').open=true;
   $('projectIdentitySettings').append($('sourceForm'),$('mappingForm'));
   $('projectOptions').append($('captureSettingsButton'),$('captureSetup'));
   // Keep allocation actions reachable before a long list of existing projects.
@@ -121,6 +152,7 @@ export function initHub(context){
   $('sourceForm').onsubmit=e=>{e.preventDefault();if(!sourceProof)return;const proof=sourceProof;run(e.submitter,async()=>{await api.post('workspace/source',{...proof,sourcePath:$('sourcePath').value,confirmed:$('confirmSource').checked});sourceProof=null;$('sourceForm').dataset.dirty='false';$('saveSource').disabled=true;$('confirmSource').checked=false;await api.load();api.notice('源码关联已保存，会话和任务保留。');});};
   $('workspaceToggle').onclick=()=>setWorkspaceOpen(!$('workspaceConfig').open);
   $('closeWorkspace').onclick=()=>setWorkspaceOpen(false);
+  initSetupGuide(setWorkspaceOpen);
   $('workspaceConfig').addEventListener('toggle',workspaceVisibility);
   $('workspaceConfig').addEventListener('invalid',e=>{for(let section=e.target.closest('details');section&&section!==$('workspaceConfig');section=section.parentElement.closest('details'))section.open=true;},true);
   document.addEventListener('keydown',e=>{if(e.key==='Escape'&&$('workspaceConfig').open&&!document.querySelector('dialog[open]')){e.preventDefault();setWorkspaceOpen(false);}});
@@ -201,6 +233,9 @@ export function renderHub(state,projectId,{projectHref}={}){
   renderProductUpdate(state.service);
   renderRestart(state);
   const w=state.workspace??{mappings:{}},project=state.projects.find(p=>p.projectId===projectId),mapping=w.mappings?.[projectId];
+  $('setupGuideEntry').hidden=!!(state.caller&&w.deviceLabel&&w.controllerProjectId);
+  $('setupGuide').querySelector('[data-setup-target="logicalName"]').disabled=!project;
+  $('setupGuide').querySelector('[data-setup-step="backup"]').hidden=!state.service?.backupConfigSupported;
   const controller=state.projects.find(p=>p.projectId===w.controllerProjectId),reason=w.projects?.find(p=>p.projectId===projectId)?.reason;
   $('repositoryIdentity').textContent=project?.repository?('源码仓库：'+project.repository+' · '+(reason|| (mapping?.automatic?'已自动识别，无需手动绑定':'沿用已保存的项目身份'))):(mapping?.localOnly?'本地项目已自动配置；点击上传 GitHub，安排跨电脑接续任务。':project?.repositoryReason||'正在识别源码仓库');
   const controlAddress=viewAddress(location.href,{projectId:w.controllerProjectId??'',view:'control'});

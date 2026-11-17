@@ -4,6 +4,7 @@ import {createReadStream} from 'node:fs';
 // Sign the exact payload bytes; parsing and reserializing JSON is never part of
 // signature verification. A verifier must provide its own trusted public key.
 const MAX_MANIFEST=64*1024;
+export const RELEASE_REPOSITORY='lei0620/paiban';
 const fail=message=>{throw Error('发行清单无效：'+message);};
 const plain=value=>value!==null&&typeof value==='object'&&!Array.isArray(value);
 const exact=(value,keys)=>plain(value)&&Object.keys(value).length===keys.length&&keys.every(key=>Object.hasOwn(value,key));
@@ -30,7 +31,7 @@ export function validateReleaseManifest(manifest){
     const target=asset.platform+'/'+asset.arch;if(seen.has(target))fail('平台文件重复');seen.add(target);
     if(!Number.isSafeInteger(asset.size)||asset.size<1||asset.size>1024*1024*1024||typeof asset.sha256!=='string'||!/^[a-f0-9]{64}$/.test(asset.sha256))fail('大小或摘要无效');
     let url;try{url=new URL(asset.url);}catch{fail('下载地址无效');}
-    const prefix='/lei0620/codexkz-releases/releases/download/v'+manifest.version+'/';
+    const prefix='/'+RELEASE_REPOSITORY+'/releases/download/v'+manifest.version+'/';
     if(url.protocol!=='https:'||url.hostname!=='github.com'||url.port||url.username||url.password||url.search||url.hash||!url.pathname.startsWith(prefix)||!/^[-a-zA-Z0-9_.]+$/.test(url.pathname.slice(prefix.length)))fail('下载地址不属于指定公开发行版本');
   }
   return manifest;

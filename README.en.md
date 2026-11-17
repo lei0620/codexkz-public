@@ -27,7 +27,7 @@ You need Windows, Node.js 22.13 or later, PowerShell 7, and a running Codex desk
    npm.cmd start
    ```
 
-3. Keep the service running and open the [local panel](http://127.0.0.1:4319). Choose a project, confirm the device and controller project in Settings, and add a task.
+3. Keep the service running and open the [local panel](http://127.0.0.1:4319). Select Start setup. Each step links to the relevant controls and includes a prompt you can paste into Codex for help. Connect Codex and set the device and controller project. Then choose a project and add a task. Set up your own private GitHub repository only if you need cross-device sync.
 4. Confirm the target chat when starting a task. When Codex finishes the turn, review the result under In review.
 
 ## Updates
@@ -55,7 +55,11 @@ If the panel helps you, consider starring the repository, reporting an issue, or
 
 </details>
 
-## Source layout
+## Development
+
+Clone the [Paiban source repository](https://github.com/lei0620/paiban) and follow Quick start. Run `npm run verify` to check source and documentation and run the offline tests.
+
+### Source layout
 
 - [server.mjs](server.mjs) and [panel-runner.mjs](panel-runner.mjs) provide the local service, startup, and safe restart.
 - [public/](public/) contains the HTML, CSS, and JavaScript interface.

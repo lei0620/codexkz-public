@@ -658,7 +658,7 @@ function maintenanceView(){
   const maintenance=state.maintenance;if(!maintenance)return null;
   let reason='';
   if(maintenance.status==='waiting'&&maintenance.kind==='product-update'){
-    if(state.jobs.some(j=>j.status==='uncertain'||j.awaitingUser)||pendingInitialDispatches(state).length||state.tasks.some(t=>t.initialDispatch||handoffPending(t))||Object.values(state.threadRequests??{}).some(r=>['creating','pending','uncertain'].includes(r.status)))reason='有未决任务或请求，请先核对';
+    if(hasUnresolvedUpgradeWork(state))reason='有未决任务或请求，请先核对';
     else if(state.jobs.some(j=>['sending','submitted','running'].includes(j.status)))reason='等待运行中的任务结束';
     else if(state.jobs.some(j=>j.status==='queued'))reason='存在排队任务，请先处理或取消等待';
     else if(state.automation.plans.some(p=>p.status==='active'))reason='存在运行中的自动安排，请先处理';
@@ -906,7 +906,13 @@ const handoffs=new HandoffCoordinator({now:refreshNow,getState:()=>state,getCata
   }});
 
 function restartBusy(){return !!desktopCheckFlight||!!releaseStaging||!!releaseScheduler?.pending||!!reconcilingExecutions||!!automaticSourceBinding.pending||executionReads.size>0||executionInspections.size>0||directMessages.active.size>0||!!composer.active||directSync.active.size>0||directSync.jobs().some(j=>j.status!=='queued')||pendingInitialDispatches(state).length>0||repository.inspect().queued>0||activeRequests>0||syncRunning||dispatching||ticking||refreshing||metadataRefreshing||connecting||sidecars.running||Object.values(state.threadRequests??{}).some(r=>r.status==='creating');}
-function productUpdateBlocked(value){return value.jobs.some(j=>j.awaitingUser||['queued','sending','submitted','running','uncertain'].includes(j.status))||pendingInitialDispatches(value).length>0||value.tasks.some(t=>t.initialDispatch||handoffPending(t))||Object.values(value.threadRequests??{}).some(r=>['creating','pending','uncertain'].includes(r.status))||value.automation.plans.some(p=>p.status==='active')||value.sync.autoEnabled===true;}
+function hasUnresolvedUpgradeWork(value){
+  return !!directMessages.fault||Array.from(directMessages.records.values()).some(receipt=>['sending','uncertain'].includes(receipt.status))
+    ||value.jobs.some(job=>job.awaitingUser||job.status==='uncertain')
+    ||pendingInitialDispatches(value).length>0||value.tasks.some(task=>task.initialDispatch||handoffPending(task))
+    ||Object.values(value.threadRequests??{}).some(request=>['creating','pending','uncertain'].includes(request.status));
+}
+function productUpdateBlocked(value){return hasUnresolvedUpgradeWork(value)||value.jobs.some(job=>['queued','sending','submitted','running'].includes(job.status))||value.automation.plans.some(plan=>plan.status==='active')||value.sync.autoEnabled===true;}
 function requestServiceRestart(){
   setTimeout(()=>{Promise.resolve().then(()=>options.requestRestart()).catch(async error=>{
     restarting=false;await mutate(draft=>{draft.maintenance={status:'failed',error:'重启失败：'+error.message};});
@@ -919,24 +925,26 @@ function requestServiceUpdate(id){
 }
 async function maintenanceTick(){
   if(closing||restarting||restartChecking||!maintenanceWaiting(state)||restartBusy()||state.jobs.some(j=>['sending','submitted','running','uncertain'].includes(j.status)))return;
-  const product=state.maintenance?.kind==='product-update',stageId=product?state.maintenance.stageId:null,stageProof=product?state.maintenance.stageProof:null;
+  const waiting=state.maintenance,product=waiting.kind==='product-update';
+  const {stageId,stageProof}=waiting,request=JSON.stringify(waiting);
+  const sameRequest=value=>JSON.stringify(value.maintenance)===request;
   if(product&&productUpdateBlocked(state))return;
-  restartChecking=true;
+  let consumed=false;restartChecking=true;
   try{
     await (options.checkRestart??(()=>checkRestartCode(programRoot,{installed:separateData})))();
     // Cancellation and running work may change while the checker is outside
     // the HTTP process. Never arm an update from an obsolete waiting request.
-    if(closing||!maintenanceWaiting(state)||restartBusy()||state.jobs.some(j=>['sending','submitted','running','uncertain'].includes(j.status)))return;
+    if(closing||!sameRequest(state)||restartBusy()||state.jobs.some(j=>['sending','submitted','running','uncertain'].includes(j.status)))return;
     if(product){
-      if(state.maintenance?.kind!=='product-update'||state.maintenance.stageId!==stageId||productUpdateBlocked(state))return;
+      if(productUpdateBlocked(state))return;
       if(!releaseScheduler||typeof options.requestUpdate!=='function')throw Error('当前启动方式不支持产品升级');
       const staged=await verifyStagedRelease({...releaseConfig,root,stageId});
       const saved=await releaseCheckStore(root).read();
       if(!saved?.envelope||createHash('sha256').update(JSON.stringify(saved.envelope)).digest('hex')!==stageProof)throw Error('可用更新已变化，请重新检查和下载');
-      if(closing||!maintenanceWaiting(state)||state.maintenance?.stageId!==stageId||restartBusy()||productUpdateBlocked(state))return;
+      if(closing||!sameRequest(state)||restartBusy()||productUpdateBlocked(state))return;
       const backupRoot=configuredBackupRoot(root);if(!backupRoot)throw Error('请先配置本机备份目录');
-      restarting=true;const armed=await mutate(draft=>{if(draft.maintenance?.kind!=='product-update'||draft.maintenance.stageId!==stageId||productUpdateBlocked(draft))return false;draft.maintenance=null;return true;});
-      if(!armed){restarting=false;return;}
+      restarting=true;consumed=await mutate(draft=>{if(!sameRequest(draft)||productUpdateBlocked(draft))return false;delete draft.maintenance;return true;});
+      if(!consumed){restarting=false;return;}
       fs.mkdirSync(validateBackupRoot(root,backupRoot),{recursive:true});
       const backupPath=path.join(backupRoot,localBackupStamp()+'_升级备份_'+randomUUID().slice(0,8));
       await backupInstalledData({source:root,backup:backupPath,lease:dataLock});
@@ -945,8 +953,10 @@ async function maintenanceTick(){
       requestServiceUpdate(tx.id);return;
     }
     restarting=true;await repository.backup(restartBackup);
-    await mutate(armMaintenance);requestServiceRestart();
-  }catch(error){restarting=false;if(product||maintenanceWaiting(state))await mutate(draft=>{draft.maintenance={status:'failed',...(product?{kind:'product-update'}:{}),error:error.message};});}
+    consumed=await mutate(draft=>{if(!sameRequest(draft))return false;armMaintenance(draft);return true;});
+    if(!consumed){restarting=false;return;}
+    requestServiceRestart();
+  }catch(error){restarting=false;if(consumed||sameRequest(state))await mutate(draft=>{if(consumed||sameRequest(draft))draft.maintenance={status:'failed',...(product?{kind:'product-update'}:{}),error:error.message};});}
   finally{restartChecking=false;}
 }
 const json=(res,status,value)=>{
@@ -961,7 +971,7 @@ async function handleRequest(req,res){
     if(req.headers.host!==address)return json(res,403,{error:'仅允许本机地址访问'});
     if(req.headers.origin&&req.headers.origin!==origin)return json(res,403,{error:'拒绝跨站请求'});
     const url=new URL(req.url,origin);
-    if(pendingStartup&&req.method!=='GET')return json(res,503,{error:'新版本正在核对启动，暂不接收写入或执行',notApplied:true});
+    if(pendingStartup&&(req.method!=='GET'||url.pathname!=='/api/service/health'))return json(res,503,{error:'新版本正在核对启动，请等待重连',notApplied:true});
     if(req.headers['x-panel-token']===token)res.diagnosticContext={method:req.method,route:url.pathname};
     // Native calls keep the ordinary Host/token gates and are never accepted
     // from a web origin. The capability is held by the local stdio adapter.
@@ -1103,7 +1113,7 @@ async function handleRequest(req,res){
         const stage=releaseStage,proof=releaseStageProof;await verifyStagedRelease({...releaseConfig,root,stageId:stage.stageId});
         const saved=await releaseCheckStore(root).read();
         if(!saved?.envelope||!proof||createHash('sha256').update(JSON.stringify(saved.envelope)).digest('hex')!==proof||releaseStage!==stage)throw Error('可用更新已变化，请重新检查和下载');
-        await mutate(draft=>{if(maintenanceWaiting(draft))throw Error('已有维护操作在等待');draft.maintenance={status:'waiting',kind:'product-update',stageId:stage.stageId,stageProof:proof,requestedAt:new Date().toISOString()};});
+        await mutate(draft=>{if(maintenanceWaiting(draft))throw Error('已有维护操作在等待');draft.maintenance={status:'waiting',kind:'product-update',requestId:randomUUID(),stageId:stage.stageId,stageProof:proof,requestedAt:new Date().toISOString()};});
         void maintenanceTick();return json(res,200,{ok:true,status:'waiting',message:'等待任务和未决操作安全结束；可取消等待。'});
       }
       if(url.pathname==='/api/service/cancel-update'){
@@ -1177,7 +1187,7 @@ async function handleRequest(req,res){
         if(b.instanceId!==instanceId)throw Error('服务实例已变化，请刷新后重试');
         if(b.whenIdle===true){
           if(b.confirmed!==true)throw Error('请先确认公共面板重启范围与队列恢复方式');
-          if(!maintenanceWaiting(state))await mutate(draft=>{draft.maintenance={status:'waiting',requestedAt:new Date().toISOString()};});
+          if(!maintenanceWaiting(state))await mutate(draft=>{draft.maintenance={status:'waiting',requestId:randomUUID(),requestedAt:new Date().toISOString()};});
           return json(res,200,{ok:true,waiting:true,message:'等待当前任务结束；重启后继续原活动计划，手动暂停的保持暂停'});
         }
         if(maintenanceWaiting(state))throw Error('已安排安全重启，请等待或取消');
@@ -1672,7 +1682,7 @@ async function collectPlans(){
 const timers=[];
 const syncTick=autoSync.tick.bind(autoSync);
 autoSync.tick=()=>closing?Promise.resolve():track(syncTick());
-state=await repository.activate(state);
+state=await repository.activate(state,{requireUnchanged:!!pendingStartup});
 diagnostics.observe(state);
 serve=(req,res)=>{track(handleRequest(req,res));};
 function startTimers(){if(options.autostart===false||pendingStartup||closing||timers.length)return;void lightTick().catch(()=>{});timers.push(setInterval(()=>track(collectPlans()).catch(error=>{connectionError=error.message;}),3000),setInterval(()=>void autoSync.tick(),1000),setInterval(()=>track(maintenanceTick()).catch(error=>{connectionError=error.message;}),1000),setInterval(()=>void tick(),6000),setInterval(()=>void lightTick().catch(()=>{}),1000));if(releaseScheduler){void track(checkProductRelease(false)).catch(()=>{});timers.push(setInterval(()=>void track(checkProductRelease(false)).catch(()=>{}),60*60*1000));}for(const timer of timers)timer.unref();}

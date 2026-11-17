@@ -1,6 +1,7 @@
 param(
   [Parameter(Mandatory)][string]$DataRoot,
-  [ValidateRange(1024,65535)][int]$Port = 4319
+  [ValidateRange(1024,65535)][int]$Port = 4319,
+  [switch]$OpenBrowser
 )
 $ErrorActionPreference = 'Stop'
 $bootstrapProgram = Split-Path -Parent $PSScriptRoot
@@ -24,5 +25,26 @@ $env:PATH = (Split-Path -Parent $shell) + [IO.Path]::PathSeparator + $env:PATH
 $env:CODEXKZ_INSTALLED_DATA_ROOT = [IO.Path]::GetFullPath($DataRoot)
 $env:CODEXKZ_INSTALL_ROOT = $install
 $env:PORT = [string]$Port
-& $node (Join-Path $program 'panel-runner.mjs')
-exit $LASTEXITCODE
+$openPage = $null
+if ($OpenBrowser) {
+  $openPage = Start-ThreadJob -ArgumentList $Port, $selected.version -ScriptBlock {
+    param($PanelPort, $PanelVersion)
+    $origin = "http://127.0.0.1:$PanelPort"
+    $deadline = [DateTime]::UtcNow.AddSeconds(40)
+    do {
+      try { $service = Invoke-RestMethod "$origin/api/service/health" -MaximumRedirection 0 -TimeoutSec 2 } catch { $service = $null }
+      if ($service.instanceId -and $service.productVersion -eq $PanelVersion) {
+        Start-Process "$origin/"
+        return
+      }
+      Start-Sleep -Milliseconds 400
+    } while ([DateTime]::UtcNow -lt $deadline)
+  }
+}
+try {
+  & $node (Join-Path $program 'panel-runner.mjs')
+  $runnerExit = $LASTEXITCODE
+} finally {
+  if ($openPage) { Remove-Job -Job $openPage -Force }
+}
+exit $runnerExit
