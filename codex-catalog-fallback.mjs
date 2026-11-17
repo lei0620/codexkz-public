@@ -4,7 +4,7 @@ import path from 'node:path';
 import {normalize} from './core.mjs';
 
 const threadId=/^[a-zA-Z0-9-]{10,80}$/;
-function codexCommand(){
+export function codexCommand(){
   const root=process.env.LOCALAPPDATA&&path.join(process.env.LOCALAPPDATA,'OpenAI','Codex','bin');
   try{
     const files=fs.readdirSync(root,{withFileTypes:true}).filter(entry=>entry.isDirectory()).map(entry=>path.join(root,entry.name,'codex.exe')).filter(file=>fs.lstatSync(file,{throwIfNoEntry:false})?.isFile());

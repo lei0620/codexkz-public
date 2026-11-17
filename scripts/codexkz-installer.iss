@@ -18,7 +18,7 @@ Uninstallable=yes
 #endif
 AppName=派板 (Paiban)
 AppVersion={#ProductVersion}
-DefaultDirName={localappdata}\Programs\CodexKZ
+DefaultDirName={localappdata}\Paiban
 UsePreviousAppDir=no
 DefaultGroupName=派板
 DisableProgramGroupPage=yes
@@ -51,9 +51,10 @@ Name: "{app}\启动本机面板"; Filename: "{app}\runtime\powershell\pwsh.exe";
 Name: "{app}\恢复未完成升级"; Filename: "{app}\runtime\powershell\pwsh.exe"; Parameters: "{code:RecoveryArguments}"; WorkingDir: "{app}\program"
 #ifndef IsolatedTest
 Name: "{group}\派板"; Filename: "{app}\runtime\powershell\pwsh.exe"; Parameters: "{code:LauncherArguments}"; WorkingDir: "{app}\program"
+Name: "{group}\接入 Codex 白板"; Filename: "{app}\runtime\powershell\pwsh.exe"; Parameters: "{code:ConnectArguments}"; WorkingDir: "{app}\program"
 
 [Run]
-Filename: "{app}\runtime\powershell\pwsh.exe"; Parameters: "{code:LauncherArguments}"; WorkingDir: "{app}\program"; Description: "启动派板"; Flags: postinstall skipifsilent nowait
+Filename: "{app}\runtime\powershell\pwsh.exe"; Parameters: "{code:LauncherArguments}"; WorkingDir: "{app}\program"; Description: "打开派板"; Flags: postinstall skipifsilent nowait runhidden
 #endif
 
 [Messages]
@@ -71,7 +72,12 @@ function CreateDirectoryExclusive(Path: String; SecurityAttributes: LongWord): B
 
 function LauncherArguments(Param: String): String;
 begin
-  Result := '-NoProfile -File ' + AddQuotes(ExpandConstant('{app}\program\scripts\installed-launch.ps1')) + ' -DataRoot ' + AddQuotes(PathsPage.Values[0]) + ' -OpenBrowser';
+  Result := '-NoProfile -WindowStyle Hidden -File ' + AddQuotes(ExpandConstant('{app}\program\scripts\installed-launch.ps1')) + ' -DataRoot ' + AddQuotes(PathsPage.Values[0]) + ' -OpenBrowser';
+end;
+
+function ConnectArguments(Param: String): String;
+begin
+  Result := '-NoProfile -WindowStyle Hidden -File ' + AddQuotes(ExpandConstant('{app}\program\scripts\installed-launch.ps1')) + ' -DataRoot ' + AddQuotes(PathsPage.Values[0]) + ' -ConnectCodex';
 end;
 
 function RecoveryArguments(Param: String): String;
@@ -135,11 +141,11 @@ begin
   SourcePage := CreateInputDirPage(PathsPage.ID, '旧源码项目目录',
     '请选择原项目目录', '仅在旧面板停止并且没有未决操作时迁移。', False, '');
   SourcePage.Add('旧源码项目目录：');
-  ConnectPage := CreateOutputMsgMemoPage(SourcePage.ID, '接入本聊天白板',
-    '安装完成后，将面板连接到 Codex 桌面应用', '请保存以下步骤；安装程序不会更改已有插件配置。', '');
+  ConnectPage := CreateOutputMsgMemoPage(SourcePage.ID, '打开派板',
+    '安装后可以从开始菜单打开派板', '首次打开时，在网页中按步骤连接 Codex。', '');
   DataArg := ExpandConstant('{param:DataRoot|}');
   BackupArg := ExpandConstant('{param:BackupRoot|}');
-  if DataArg = '' then DataArg := ExpandConstant('{localappdata}\CodexKZData');
+  if DataArg = '' then DataArg := ExpandConstant('{localappdata}\PaibanData');
   if BackupArg = '' then BackupArg := ExpandConstant('{localappdata}\PaibanBackups');
   PathsPage.Values[0] := DataArg;
   PathsPage.Values[1] := BackupArg;
@@ -150,12 +156,9 @@ procedure CurPageChanged(CurPageID: Integer);
 begin
   if CurPageID = ConnectPage.ID then
     ConnectPage.RichEditViewer.Lines.Text :=
-      '安装后可从开始菜单启动派板，面板会在浏览器打开。点击“开始设置”按步骤配置，每一步均可复制 Codex 指令。' + #13#10 + #13#10 +
-      '如需在 Codex 聊天里打开白板，先启动派板，再在 PowerShell 中运行：' + #13#10 +
-      'codex plugin marketplace add ' + AddQuotes(ExpandConstant('{app}\codex-plugin')) + ' --json' + #13#10 +
-      'codex plugin add paiban-board@paiban-local --json' + #13#10 + #13#10 +
-      '在 Codex 中重新加载插件连接并打开“派板 · 本聊天白板”。插件连接启动时读取派板的当前版本。' + #13#10 + #13#10 +
-      '如果本机已有 paiban-local 插件市场，先核对它的来源。旧的本机面板与派板使用相同的默认端口，需要先正常退出旧面板。';
+      '点击安装完成页的“打开派板”，面板会在浏览器中打开。以后可以从开始菜单再次打开。' + #13#10 + #13#10 +
+      '第一次使用时，打开 Codex 桌面中的一个聊天，在派板网页点击“开始设置”。使用聊天链接或 ID 完成连接。' + #13#10 + #13#10 +
+      '如果想在 Codex 聊天里打开白板，从开始菜单选择“接入 Codex 白板”。接入提示出现后，完成手头的工作并重新打开 Codex。';
 end;
 
 function ShouldSkipPage(PageID: Integer): Boolean;

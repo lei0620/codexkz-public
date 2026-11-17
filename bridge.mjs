@@ -4,6 +4,11 @@ import {execFile} from 'node:child_process';
 import {promisify} from 'node:util';
 import {randomUUID} from 'node:crypto';
 const exec = promisify(execFile);
+export function connectionThreadId(value){
+  const input=typeof value==='string'?value.trim():'';
+  if(/^[a-zA-Z0-9-]{10,80}$/.test(input))return input;
+  return /^codex:\/\/threads\/([a-zA-Z0-9-]{10,80})\/?$/.exec(input)?.[1]??'';
+}
 export async function discoverInstances(options={}) {
   let rows=options.legacy;
   if(rows===undefined){

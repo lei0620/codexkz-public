@@ -39,7 +39,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import {fileURLToPath} from 'node:url';
 import {randomUUID,randomBytes,createHash} from 'node:crypto';
-import {Bridge,discoverInstances} from './bridge.mjs';
+import {Bridge,connectionThreadId,discoverInstances} from './bridge.mjs';
 import {normalize,busy,matchingTurn,readJobTurn,jobTurnPatch,setBinding,validateBatch,prepareQueuedJob,queuedJobReason,queuedJobLocalReason,queuedThreadReason,executionSlotCount,dependencySatisfied,sourceAwareJob,sourceAwareJobs,sourcePathsOverlap} from './core.mjs';
 import {collectCatalog} from './catalog.mjs';
 import {loadModelRegistry,titlePurpose,canonicalTitle,threadModelView,defaultModelKey,threadModelRecord} from './model-routing.mjs';
@@ -77,6 +77,7 @@ if(options.storageBackend&&!['json','sqlite'].includes(options.storageBackend))t
 if(options.storageBackend==='sqlite'&&(!options.makeBridge||!options.makeStore))throw Error('SQLite服务入口仍只允许注入隔离桌面和远端适配器');
 const programRoot=fs.realpathSync.native(options.root??moduleRoot),root=options.dataRoot?fs.realpathSync.native(options.dataRoot):programRoot;
 const separateData=root!==programRoot;
+const launchId=separateData&&options.installRoot&&/^[a-f0-9]{32}$/.test(process.env.PAIBAN_LAUNCH_ID??'')?process.env.PAIBAN_LAUNCH_ID:'';
 if(options.dataRoot&&!separateData)throw Error('独立数据目录不能与程序目录相同');
 if(separateData){
   const within=(parent,child)=>{const relative=path.relative(parent,child);return !relative||!relative.startsWith('..'+path.sep)&&relative!=='..'&&!path.isAbsolute(relative);};
@@ -1057,7 +1058,7 @@ async function handleRequest(req,res){
         queries.update(state,catalog.projects);return conditionalJSON(req,res,queries.query(kind,url.searchParams));
       }catch(error){return json(res,error.status??400,{error:error.message});}
     }
-    if(url.pathname==='/api/service/health'&&req.method==='GET')return json(res,200,{instanceId,productVersion:releaseConfig?.version??null});
+    if(url.pathname==='/api/service/health'&&req.method==='GET')return json(res,200,{instanceId,productVersion:releaseConfig?.version??null,...(launchId?{launchId}:{})});
     if(url.pathname==='/api/state'&&req.method==='GET')return json(res,200,{...publicCatalog(),bindings:state.bindings,jobs:state.jobs,tasks:state.tasks.map(presentTask),taskSections:state.taskSections,taskGroups:Object.values(state.workspace.taskGroups??{}).flat(),planIntakes:planIntakeView(state),versionRecords:state.versionRecords.filter(v=>!v.deletedAt),versionIntakes:versionIntakeView(state),propertyGroups:state.propertyGroups??{},capture:captureSnapshot(state),automation:automationSnapshot(state),legacyJobs:state.jobs.filter(j=>!j.taskId),boards:sidecars.snapshot(),workspace:workspaceView(state,catalog.projects),projectTransfers:projectTransferView(),sync:{config:state.sync.config,conflicts:state.sync.conflicts,lastSync:state.sync.lastSync,error:state.sync.error,running:syncRunning,automatic:autoSync.snapshot(),inbox:state.sync.base.filter(r=>!r.deleted&&!Object.values(state.workspace.mappings).some(m=>m.logicalId===r.logicalId))},workflowChecks:state.workflowChecks??{},caller:state.caller,token,connectionError,lastSync,service:{instanceId,startedAt,restarting,backupConfigSupported:true,productVersion:releaseConfig?.version??null,releaseApplySupported:!!releaseScheduler&&typeof options.requestUpdate==='function',releaseCheck:releaseStatus,nativeMcpSupported:true,nativeBootstrapSupported:true,executionRecoverySupported:true,automaticRecoverySupported:true,scopedActivityRecoverySupported:true,automaticUncertainReleaseSupported:true,safeReadRecoverySupported:true,versionDeleteSupported:true,manualTaskAcceptanceSupported:true,manualPausedExecutionSupported:true,boundedThreadReadSupported:true,diagnosticsSupported:true,desktopCheckSupported:true,desktopContextSupported:true,desktopContextFastCheckSupported:true,desktopContextThreadLookupSupported:true,desktopContextDiagnostics:desktopContext.diagnostics(),connectionDiagnostics:bridge.diagnostics?.()??null,catalogHealthSupported:true,catalogRecoverySupported:true,backgroundChecksSupported:true,catalogHealth:catalogHealth.snapshot(),storage:repository.inspect(),restartSupported:typeof options.requestRestart==='function',maintenanceSupported:true,executionScopesSupported:true,intelligentDispatchSupported:true,asyncStorageSupported:true,projectSyncSupported:true,directProjectSyncSupported:true,nativeProjectSyncSupported:true,projectTransferSupported:true,workflowTasksSupported:true,taskHandoffSupported:true,projectSyncSending:directSync.snapshot(),modelRoutingSupported:true,modelSeriesRoutingSupported:true,cleanDispatchSupported:true,taskContentSupported:true,composerSupported:true,currentThreadSendSupported:true,directThreadMessageSupported:true,nativeComposerSendSupported:true,composerReceiptLookupSupported:true,projectReferencesSupported:true,projectReferenceTagManagementSupported:true,projectReferenceGroupsSupported:true,projectBoardSyncSupported:true,taskGroupsSupported:true,projectBoardSupported:true,currentThreadModesSupported:true,taskRoundsSupported:true,reviewRecoverySupported:true,taskAcceptanceSupported:true,sourceBindingSupported:true,maintenance:maintenanceView(),impact:maintenanceImpact(state,catalog.projects),activeRequests}});
     if(url.pathname.startsWith('/api/')){
       if(req.method!=='POST'||req.headers['x-panel-token']!==token)return json(res,403,{error:'请求验证失败，请刷新面板'});
@@ -1390,10 +1391,11 @@ async function handleRequest(req,res){
       if(url.pathname==='/api/connection/instances')return json(res,200,{instances:(await discoverInstances()).map(({id,label})=>({id,label})),selected:bridge.instanceId});
       if(url.pathname==='/api/connection/setup'){
         if(state.jobs.some(j=>['queued','sending','submitted','running','uncertain'].includes(j.status)))throw new Error('尚有在途任务，不能切换调度连接');
-        if(typeof b.caller!=='string'||!b.caller.match(/^[a-zA-Z0-9-]{10,80}$/)||typeof b.instanceId!=='string')throw new Error('请选择本机实例并填写真实调度任务 ID');
-        const candidate=makeBridge(b.caller,b.instanceId);await candidate.connect();const current=await readDesktopThread(candidate,{threadId:b.caller,turnLimit:1,maxOutputCharsPerItem:0},sessionReader);
-        if(current.thread?.id!==b.caller||current.thread?.kind!=='codex'||current.thread?.hostId!=='local')throw new Error('调度任务不是所选实例可用的本机 Codex 对话');
-        await mutate(draft=>{if(draft.jobs.some(j=>['queued','sending','submitted','running','uncertain'].includes(j.status)))throw Error('连接核对期间已有在途任务，未切换连接');draft.caller=b.caller;draft.connection={instanceId:b.instanceId};});catalogHealth.invalidate();Object.assign(bridge,candidate);await refreshMetadata();return json(res,200,{ok:true});
+        const caller=connectionThreadId(b.caller);
+        if(!caller||typeof b.instanceId!=='string')throw new Error('请选择本机实例并填写有效的 Codex 聊天链接或 ID');
+        const candidate=makeBridge(caller,b.instanceId);await candidate.connect();const current=await readDesktopThread(candidate,{threadId:caller,turnLimit:1,maxOutputCharsPerItem:0},sessionReader);
+        if(current.thread?.id!==caller||current.thread?.kind!=='codex'||current.thread?.hostId!=='local')throw new Error('调度任务不是所选实例可用的本机 Codex 对话');
+        await mutate(draft=>{if(draft.jobs.some(j=>['queued','sending','submitted','running','uncertain'].includes(j.status)))throw Error('连接核对期间已有在途任务，未切换连接');draft.caller=caller;draft.connection={instanceId:b.instanceId};});catalogHealth.invalidate();Object.assign(bridge,candidate);await refreshMetadata();return json(res,200,{ok:true});
       }
       if(url.pathname==='/api/boards/enable'||url.pathname==='/api/boards/disable'){
         const enable=url.pathname.endsWith('/enable');await mutate(draft=>configureSidecars(draft,b,catalog,enable));

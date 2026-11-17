@@ -17,6 +17,14 @@ A local task board for Codex on Windows. Assign tasks to the appropriate Codex c
 
 ## Quick start
 
+### Windows installer (pending release)
+
+Once released, download the Windows x64 installer from [GitHub Releases](https://github.com/lei0620/paiban/releases). Select Open Paiban on the final setup screen, or open Paiban from the Windows Start menu later. The installer includes the required runtimes. Everyday use requires no terminal commands.
+
+On first launch, select Start setup and connect to the signed-in Codex desktop app using a chat link or ID. To open a board inside a Codex chat, select 接入 Codex 白板 (Connect Codex board) from the Windows Start menu and reopen Codex when prompted. Set up a private repository only if you need cross-device sync.
+
+### Source development
+
 You need Windows, Node.js 22.13 or later, PowerShell 7, and a running Codex desktop app signed in to your account. The source version has no project dependencies to install.
 
 1. Extract or clone the source locally. Open the directory and a chat in the Codex desktop app.

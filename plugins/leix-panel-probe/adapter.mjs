@@ -14,9 +14,9 @@ function publicBody(body,mode){
   return body;
 }
 export class LocalPanelAdapter{
-  constructor({origin='http://127.0.0.1:4319',fetcher=fetch,now=Date.now}={}){
+  constructor({origin='http://127.0.0.1:4319',expectedLaunchId='',fetcher=fetch,now=Date.now}={}){
     const url=new URL(origin);if(url.hostname!=='127.0.0.1'||url.protocol!=='http:'||url.pathname!=='/'||url.search||url.hash||url.username||url.password)throw Error('适配器仅支持本机回环服务');
-    Object.assign(this,{origin:url.origin,fetcher,now});this.sessions=new Map();this.opens=new Map();this.receiptBytes=0;
+    Object.assign(this,{origin:url.origin,expectedLaunchId,fetcher,now});this.sessions=new Map();this.opens=new Map();this.receiptBytes=0;
   }
   async http(path,{method='GET',token,capability,body,etag}={}){
     return this.fetcher(this.origin+path,{method,redirect:'error',signal:AbortSignal.timeout(method==='GET'?15000:120000),headers:{...(token?{'X-Panel-Token':token}:{}),...(capability?{'X-Leix-Native-Session':capability}:{}),...(body!==undefined?{'Content-Type':'application/json'}:{}),...(etag?{'If-None-Match':etag}:{})},...(body!==undefined?{body:JSON.stringify(body)}:{})});
@@ -26,6 +26,10 @@ export class LocalPanelAdapter{
     const threadId=mode==='thread'?hostThread(meta):'',key=mode+':'+viewId;
     const existing=this.opens.get(key);if(existing){if(existing.threadId!==threadId)reject('宿主对话已切换，请重新打开侧栏');return existing.promise;}
     const operation=(async()=>{
+      if(this.expectedLaunchId){
+        const health=await this.http('/api/service/health');
+        if(!health.ok||(await health.json()).launchId!==this.expectedLaunchId)reject('请从开始菜单打开对应安装的派板后再试',503);
+      }
       const status=await this.http('/api/view/status');if(!status.ok)reject('本机面板服务不可用',503);
       const initial=await status.json();if(initial.service?.nativeMcpSupported!==true)reject('本机服务尚未加载插件接口，请按安全更新流程加载',503);
       const response=await this.http('/api/native/session',{method:'POST',token:initial.token,body:{mode,...(threadId?{threadId}:{}),...(initial.service?.nativeBootstrapSupported===true?{bootstrap:true}:{})}}),session=await response.json();
