@@ -7,7 +7,7 @@ import {initWorkflowInitialization,renderWorkflowInitialization} from './workflo
 import {projectPropertyGroups,propertyInput,readTypeInput} from './properties.js';
 const $=id=>document.getElementById(id);
 const esc=value=>String(value??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
-let api,current={},restartPending=false,restartInstance=null,observedInstance=null,sourceProof=null,sourceProjectId=null,updateBusy=false,updateMessage='';
+let api,current={},restartPending=false,restartInstance=null,observedInstance=null,sourceProof=null,sourceProjectId=null,updateBusy=false,updateMessage='',reconnectDataLocation;
 let projectBoardUI,projectBoardModule;
 const dismissedSourceReminders=new Set();
 const sourceReminderKey=projectId=>'leix:source-reminder-dismissed:'+projectId;
@@ -29,12 +29,13 @@ function setupGuideMarkup(){
   return `<details id="setupGuide" class="workspace-advanced"><summary>首次设置</summary>${setupSteps.map(step=>`<details class="workspace-option" data-setup-step="${step.key}"><summary>${step.title}</summary><p class="hint">${step.help}</p><div class="setup-guide-actions"><button type="button" data-setup-target="${step.target}" aria-label="打开配置：${step.title}">打开配置</button><button type="button" data-setup-copy aria-label="复制 Codex 指令：${step.title}">复制 Codex 指令</button></div><textarea hidden readonly rows="5" aria-label="${step.title}的 Codex 指令"></textarea><p class="hint" role="status"></p></details>`).join('')}</details>`;
 }
 
-function initSetupGuide(openSettings){
-  $('setupGuideEntry').onclick=()=>{openSettings(true);$('setupGuide').open=true;const summary=$('setupGuide').querySelector('summary');summary.focus();};
+function initSetupGuide(openSettings,showSettingsSection){
+  $('setupGuideEntry').onclick=()=>{openSettings(true);showSettingsSection('general');$('setupGuide').open=true;const summary=$('setupGuide').querySelector('summary');summary.focus();};
   $('setupGuide').addEventListener('click',async event=>{
     const jump=event.target.closest('[data-setup-target]');
     if(jump){
       const target=$(jump.dataset.setupTarget);
+      showSettingsSection(target.closest('[data-settings-section]').dataset.settingsSection);
       for(let panel=target.closest('details');panel;panel=panel.parentElement.closest('details'))panel.open=true;
       target.focus({preventScroll:true});target.scrollIntoView({block:'center'});return;
     }
@@ -100,16 +101,17 @@ export function initHub(context){
   const host=document.createElement('section');host.id='workspaceHub';
   host.innerHTML=`<nav class="hub-nav" aria-label="工作区导航"><div class="hub-switch"><a id="controlLink">总控</a><a id="ownBoardLink">项目</a><a id="referencesLink">资料</a></div><div class="workspace-tools"><button id="workspaceToggle" class="device-status-button" aria-controls="workspaceConfig" aria-expanded="false" aria-label="工作区设置"><svg class="device-icon" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="4" width="18" height="13" rx="2"/><path d="M8 21h8M12 17v4"/></svg><span class="device-divider" aria-hidden="true"></span><span id="workspaceLabel">未设置电脑</span><span id="updateAvailable" hidden> · 有更新</span><span class="device-divider" aria-hidden="true"></span></button></div></nav>
     <button type="button" id="setupGuideEntry" hidden>开始设置</button><p id="identityReminder" class="identity-reminder" role="status"></p>
-    <details id="workspaceConfig" class="settings"><summary>工作区设置</summary><div class="workspace-panel-heading"><h1 id="workspaceHeading" tabindex="-1">设置</h1><button type="button" id="closeWorkspace">返回</button></div><p id="workspaceSettingsNotice" role="status" aria-live="polite" hidden></p><p id="workspaceContext" hidden></p><div class="settings-body hub-settings">
+    <details id="workspaceConfig" class="settings"><summary>工作区设置</summary><div class="workspace-panel-heading"><h1 id="workspaceHeading" tabindex="-1">设置</h1><nav id="workspaceSettingsNav" aria-label="设置分区"><button type="button" data-settings-target="general">常规</button><button type="button" data-settings-target="project">项目</button><button type="button" data-settings-target="sync">同步</button><button type="button" data-settings-target="storage">数据</button><button type="button" data-settings-target="updates">更新</button></nav><button type="button" id="closeWorkspace">返回</button></div><p id="workspaceSettingsNotice" role="status" aria-live="polite" hidden></p><p id="workspaceContext" hidden></p><div class="settings-body hub-settings">
     <form id="deviceForm"><h3>这台电脑</h3><p id="deviceSummary" class="hint"></p><details id="deviceSettings" class="workspace-option"><summary>更改电脑与总控</summary>${input('deviceLabel','电脑名称','deviceLabel')}<label for="controllerProject">总控项目</label><select id="controllerProject" name="controllerProjectId" required></select><button class="primary">保存</button></details></form>
     <form id="syncForm"><h3>待办同步</h3><p id="syncOverview" class="hint" role="status"></p><div class="workspace-sync-actions"><label class="check"><input id="syncAutoEnabled" name="autoEnabled" type="checkbox" checked>自动同步</label><button type="button" id="syncNow">立即同步</button></div><details id="syncConfigDetails" class="workspace-option"><summary id="syncConfigSummary">同步设置</summary><p id="syncStatus" class="hint" role="status"></p><div id="syncConflicts"></div><p id="syncInbox" class="hint"></p>${input('syncRepo','GitHub 私有仓库','repo')}${input('syncBranch','同步分支','branch')}<label class="check"><input id="syncRichFields" name="includeRichFields" type="checkbox" checked>包含版块、依赖、标签与附件</label><p class="hint">自动同步适用于待办。立即同步还会同步当前项目的看板和资料。</p><label class="check"><input name="confirmed" type="checkbox" required>确认使用此私有仓库保存待办及所选附件</label><button>保存同步设置</button></details></form>
     <details id="workspaceAdvanced" class="workspace-advanced"><summary>高级设置</summary>
     <form id="sourceForm"><h3>已有源码目录</h3><p id="sourceEntry" class="hint"></p><label for="sourcePath">实际源码目录</label><input id="sourcePath" name="sourcePath" required placeholder="选择已有GitHub仓库的本机绝对目录"><p class="hint">会话、任务和原有待办身份保留；只关联已有仓库，不上传或移动文件。同一源码目录会保留执行占用保护。</p><button id="previewSource" type="button">核验源码目录</button><p id="sourceProof" class="hint" role="status"></p><label class="check"><input id="confirmSource" type="checkbox" required>已核对会话入口、源码目录和仓库</label><button id="saveSource" class="primary" disabled>保存源码关联</button></form>
     <form id="mappingForm"><p id="repositoryIdentity" class="hint" role="status"></p><p id="mappingPath" hidden></p>${input('logicalId','项目标识','logicalId')}${input('logicalName','项目名称','logicalName')}<label for="projectTags">标签</label><input id="projectTags" name="tags" placeholder="逗号分隔"><label class="check"><input name="confirmed" type="checkbox" required>已核对项目与目录</label><button class="primary">保存身份</button><button id="checkWorkflow" type="button">核验规范</button><p id="workflowResult" class="hint" role="status"></p></form>
     <form id="connectionForm"><h3>桌面连接</h3><p id="connectionRecoveryHint" class="hint"></p><p id="connectionDiagnostic" class="hint" hidden></p><button id="findInstances" type="button">查找实例</button><label for="instanceId">本机实例</label><select id="instanceId" name="instanceId" required></select>${input('connectionCaller','Codex 聊天链接或 ID','caller')}<button>保存连接</button></form>
-    <details id="backupOptions" class="workspace-option" hidden><summary>备份位置</summary><form id="backupConfigForm"><label for="backupRoot">本机备份目录</label><input id="backupRoot" name="backupRoot" required autocomplete="off" placeholder="输入此电脑上的绝对目录"><p class="hint">此位置只保存在本机，用于需要备份后才能进行的操作；修改 C 盘已有文件前，请按本机规则选择备份目录。</p><button type="submit">保存备份位置</button><p id="backupConfigStatus" class="hint" role="status" aria-live="polite"></p></form></details>
     <form id="serviceForm"><h3>服务</h3><button type="button" id="restartPanel">重启面板</button><p id="restartPanelStatus" class="hint" role="status"></p></form></details>
-    <section id="productUpdate" aria-labelledby="productUpdateHeading"><h3 id="productUpdateHeading">关于与更新</h3><p id="updateVersion" class="hint" hidden></p><p id="updateNotes" class="hint" hidden></p><p id="updateStatus" class="hint" role="status" aria-live="polite" hidden></p><div class="product-update-actions"><button type="button" id="checkUpdate" hidden>检查更新</button><button type="button" id="applyUpdate" class="primary" hidden>一键升级</button><button type="button" id="cancelUpdate" hidden>取消升级等待</button><button type="button" id="sourceUpdate" aria-controls="sourceUpdateHelp" aria-expanded="false" hidden>查看更新方式</button></div><p id="sourceUpdateHelp" class="hint" hidden>从原获取渠道下载新版或更新 Git 工作区。先备份 data，再到高级设置安全重启面板。</p><p id="updatePluginHint" class="hint" hidden>升级后请重新接入本聊天白板并确认插件版本。</p><p class="hint">个人非商业使用免费 · 商用需授权</p></section></div></details>
+    <section id="storageSettings" aria-labelledby="storageSettingsHeading"><h3 id="storageSettingsHeading">数据与备份</h3><form id="dataLocationForm" hidden><label for="dataLocation">本机数据目录</label><input id="dataLocation" name="dataRoot" required autocomplete="off"><p class="hint">填写尚未创建的新目录。搬迁会先备份并重启，原目录保留。</p><button type="submit">搬迁数据并重启</button><p id="dataLocationStatus" class="hint" role="status" aria-live="polite"></p></form>
+    <details id="backupOptions" class="workspace-option" hidden><summary>备份位置</summary><form id="backupConfigForm"><label for="backupRoot">本机备份目录</label><input id="backupRoot" name="backupRoot" required autocomplete="off" placeholder="输入此电脑上的绝对目录"><button type="submit">保存备份位置</button><p id="backupConfigStatus" class="hint" role="status" aria-live="polite"></p></form></details></section>
+    <section id="productUpdate" aria-labelledby="productUpdateHeading"><h3 id="productUpdateHeading">检测升级</h3><p id="updateVersion" class="hint" hidden></p><p id="updateNotes" class="hint" hidden></p><p id="updateStatus" class="hint" role="status" aria-live="polite" hidden></p><div class="product-update-actions"><button type="button" id="checkUpdate" hidden>检测升级</button><button type="button" id="applyUpdate" class="primary" hidden>一键升级</button><button type="button" id="cancelUpdate" hidden>取消升级等待</button><a id="downloadOfficialUpdate" href="https://github.com/lei0620/paiban/releases/latest" target="_blank" rel="noopener noreferrer" hidden>下载官方安装包</a></div><p id="updatePluginHint" class="hint" hidden>升级后请重新接入本聊天白板并确认插件版本。</p><p class="hint">个人非商业使用免费 · 商用需授权</p></section></div></details>
     <section id="controlView" hidden><div class="project-heading"><h1>项目</h1><button type="button" class="control-sidebar-action" data-open-board-project="">打开侧面看板</button></div><div id="projectOverview" class="project-overview"></div>
     <details class="settings"><summary>分配待办</summary><form id="allocateForm" class="settings-body"><label for="allocateProject">目标项目</label><select id="allocateProject" name="projectId" required></select>${input('allocateTitle','任务标题','title')}<label for="allocateDescription">任务内容与验收要求</label><textarea id="allocateDescription" name="description" rows="5" maxlength="30000"></textarea><div id="allocateProperties"></div><button class="primary">保存到待执行</button></form></details>
     <details id="projectCreateSettings" class="settings"><summary>新建项目或对话</summary><form id="projectForm" class="settings-body"><label for="parentProject">父项目目录</label><select id="parentProject" name="parentProjectId" required></select>${input('newProjectName','新目录名称','name')}<label class="check"><input id="createEmptyProject" name="empty" type="checkbox">创建空目录（接入已有仓库）</label><label class="check"><input name="confirmed" type="checkbox" required>确认创建目录，保留已有文件</label><button>创建项目目录</button><p id="newProjectResult" class="hint" role="status"></p></form><form id="threadForm" class="settings-body"><label for="threadProject">项目（已添加到 Codex）</label><select id="threadProject" name="projectId" required></select><label class="check"><input name="confirmed" type="checkbox" required>确认新建对话，仅发送就绪提示</label><button>新建执行对话</button><p id="newThreadResult" class="hint" role="status"></p></form></details></section>
@@ -122,6 +124,24 @@ export function initHub(context){
   // Move the existing controls, preserving their handlers and drafts.
   const settingsBody=$('workspaceConfig').querySelector('.hub-settings');
   settingsBody.prepend($('settings'));settingsBody.insertAdjacentHTML('afterbegin',setupGuideMarkup());$('settings').open=true;
+  const settingsSections={general:['setupGuide','deviceForm','workspaceAdvanced'],project:['settings'],sync:['syncForm'],storage:['storageSettings'],updates:['productUpdate']};
+  for(const [key,ids] of Object.entries(settingsSections))for(const id of ids)$(id).dataset.settingsSection=key;
+  const settingsTabs=$('workspaceSettingsNav').querySelectorAll('[data-settings-target]');
+  let settingsSection='general';
+  function showSettingsSection(key){
+    settingsSection=key;
+    for(const tab of settingsTabs)tab.setAttribute('aria-pressed',String(tab.dataset.settingsTarget===key));
+    for(const [name,ids] of Object.entries(settingsSections))for(const id of ids)$(id).hidden=name!==key;
+    if(key==='storage'){
+      $('backupOptions').open=true;
+      loadDataLocation();
+    }
+  }
+  showSettingsSection(settingsSection);
+  $('workspaceSettingsNav').onclick=event=>{
+    const tab=event.target.closest('[data-settings-target]');
+    if(tab){showSettingsSection(tab.dataset.settingsTarget);window.scrollTo(0,0);}
+  };
   $('projectIdentitySettings').append($('sourceForm'),$('mappingForm'));
   $('projectOptions').append($('captureSettingsButton'),$('captureSetup'));
   // Keep allocation actions reachable before a long list of existing projects.
@@ -134,11 +154,11 @@ export function initHub(context){
   const setWorkspaceOpen=open=>{
     if(open===$('workspaceConfig').open)return;
     if(open)workspaceScroll={x:scrollX,y:scrollY};$('workspaceConfig').open=open;workspaceVisibility();
-    if(open){$('workspaceSettingsNotice').hidden=true;window.scrollTo(0,0);$('workspaceHeading').focus({preventScroll:true});}
+    if(open){$('workspaceSettingsNotice').hidden=true;showSettingsSection(settingsSection);window.scrollTo(0,0);$('workspaceHeading').focus({preventScroll:true});}
     else{for(const id of ['workspaceAdvanced','backupOptions','syncConfigDetails','deviceSettings','projectOptions','projectIdentitySettings','legacyBindingSettings','projectMountOptions','captureSetup'])$(id).open=false;$('captureSettingsButton').setAttribute('aria-expanded','false');window.scrollTo(workspaceScroll.x,workspaceScroll.y);$('workspaceToggle').focus({preventScroll:true});}
   };
-  $('identityReminder').addEventListener('click',e=>{if(!e.target.closest('[data-configure-project]'))return;setWorkspaceOpen(true);$('projectOptions').open=true;$('projectIdentitySettings').open=true;$('mappingForm').scrollIntoView({block:'start'});$('logicalId').focus({preventScroll:true});});
-  $('identityReminder').addEventListener('click',e=>{if(!e.target.closest('[data-configure-source]'))return;setWorkspaceOpen(true);$('projectOptions').open=true;$('projectIdentitySettings').open=true;$('sourceForm').scrollIntoView({block:'start'});$('sourcePath').focus({preventScroll:true});});
+  $('identityReminder').addEventListener('click',e=>{if(!e.target.closest('[data-configure-project]'))return;setWorkspaceOpen(true);showSettingsSection('project');$('projectOptions').open=true;$('projectIdentitySettings').open=true;$('mappingForm').scrollIntoView({block:'start'});$('logicalId').focus({preventScroll:true});});
+  $('identityReminder').addEventListener('click',e=>{if(!e.target.closest('[data-configure-source]'))return;setWorkspaceOpen(true);showSettingsSection('project');$('projectOptions').open=true;$('projectIdentitySettings').open=true;$('sourceForm').scrollIntoView({block:'start'});$('sourcePath').focus({preventScroll:true});});
   $('identityReminder').addEventListener('click',e=>{
     if(!e.target.closest('[data-dismiss-source-reminder]')||!current.projectId)return;
     dismissedSourceReminders.add(current.projectId);
@@ -152,7 +172,7 @@ export function initHub(context){
   $('sourceForm').onsubmit=e=>{e.preventDefault();if(!sourceProof)return;const proof=sourceProof;run(e.submitter,async()=>{await api.post('workspace/source',{...proof,sourcePath:$('sourcePath').value,confirmed:$('confirmSource').checked});sourceProof=null;$('sourceForm').dataset.dirty='false';$('saveSource').disabled=true;$('confirmSource').checked=false;await api.load();api.notice('源码关联已保存，会话和任务保留。');});};
   $('workspaceToggle').onclick=()=>setWorkspaceOpen(!$('workspaceConfig').open);
   $('closeWorkspace').onclick=()=>setWorkspaceOpen(false);
-  initSetupGuide(setWorkspaceOpen);
+  initSetupGuide(setWorkspaceOpen,showSettingsSection);
   $('workspaceConfig').addEventListener('toggle',workspaceVisibility);
   $('workspaceConfig').addEventListener('invalid',e=>{for(let section=e.target.closest('details');section&&section!==$('workspaceConfig');section=section.parentElement.closest('details'))section.open=true;},true);
   document.addEventListener('keydown',e=>{if(e.key==='Escape'&&$('workspaceConfig').open&&!document.querySelector('dialog[open]')){e.preventDefault();setWorkspaceOpen(false);}});
@@ -177,11 +197,40 @@ export function initHub(context){
   $('restartPanel').onclick=restartPanel;
   $('checkUpdate').onclick=()=>updateAction('check');
   $('applyUpdate').onclick=()=>updateAction('apply');
-  $('sourceUpdate').onclick=()=>{
-    const help=$('sourceUpdateHelp');help.hidden=!help.hidden;
-    $('sourceUpdate').setAttribute('aria-expanded',String(!help.hidden));
-  };
   $('cancelUpdate').onclick=()=>updateAction('cancel');
+  let lastDataInstance='',relocationInstance='';
+  async function loadDataLocation(){
+    const service=current.state?.service,form=$('dataLocationForm');
+    if(!service?.dataLocationSupported||form.dataset.dirty==='true'||relocationInstance===service.instanceId)return;
+    const instance=service.instanceId;
+    lastDataInstance=instance;
+    try{
+      const result=await api.post('service/data-location',{});
+      if(current.state?.service?.instanceId!==instance||form.dataset.dirty==='true')return;
+      $('dataLocation').value=result.dataRoot;
+      $('dataLocationStatus').textContent=service.dataLocationError||(relocationInstance?'数据已搬迁，原目录保留。':'');
+      relocationInstance='';
+    }catch(error){$('dataLocationStatus').textContent=error.message;}
+  }
+  reconnectDataLocation=service=>{
+    $('dataLocationForm').hidden=!service?.dataLocationSupported;
+    if(settingsSection==='storage'&&service?.instanceId!==lastDataInstance)void loadDataLocation();
+  };
+  $('dataLocationForm').onsubmit=async event=>{
+    event.preventDefault();
+    const form=event.currentTarget,button=event.submitter??form.querySelector('button'),input=$('dataLocation');
+    const value=input.value.trim(),instanceId=current.state?.service?.instanceId,status=$('dataLocationStatus');
+    if(relocationInstance===instanceId||button.disabled)return;
+    if([...$('workspaceConfig').querySelectorAll('form[data-dirty="true"]')].some(other=>other!==form)){status.textContent='请先保存其他设置，再搬迁数据。';return;}
+    button.disabled=true;input.readOnly=true;status.textContent='正在核对数据位置…';
+    try{
+      const result=await api.post('service/data-location',{dataRoot:value,instanceId});
+      form.dataset.dirty='false';
+      if(result.changed){relocationInstance=instanceId;status.textContent='正在备份并搬迁数据，面板会自动重连。';}
+      else status.textContent='当前已使用此数据目录。';
+    }catch(error){status.textContent=error.message;}
+    finally{button.disabled=false;input.readOnly=false;}
+  };
   let backupRead=0,backupDirty=false;
   $('backupRoot').addEventListener('input',()=>{backupDirty=true;});
   $('backupOptions').addEventListener('toggle',()=>{
@@ -231,6 +280,7 @@ export function renderHub(state,projectId,{projectHref}={}){
   $('restartPanel').disabled=restartPending||!state.service?.restartSupported;
   $('backupOptions').hidden=!state.service?.backupConfigSupported;
   renderProductUpdate(state.service);
+  reconnectDataLocation?.(state.service);
   renderRestart(state);
   const w=state.workspace??{mappings:{}},project=state.projects.find(p=>p.projectId===projectId),mapping=w.mappings?.[projectId];
   $('setupGuideEntry').hidden=!!(state.caller&&w.deviceLabel&&w.controllerProjectId);
@@ -340,24 +390,21 @@ function renderAllocationProperties(){const id=$('allocateProject').value,groups
 
 function renderProductUpdate(service={}){
   const release=service.releaseCheck??{},maintenance=service.maintenance,waiting=maintenance?.status==='waiting'&&maintenance.kind==='product-update';
-  const sourceMode=release.supported===false&&release.status!=='error';
-  $('updateVersion').hidden=!sourceMode&&!release.supported&&!service.productVersion;
-  $('updateVersion').textContent='派板 · Paiban · '+(sourceMode?'源码运行版':'当前版本：'+(service.productVersion??'未知')+(release.available?' · 可升级至 '+release.version:''));
-  $('sourceUpdate').hidden=!sourceMode;
-  if(!sourceMode){$('sourceUpdateHelp').hidden=true;$('sourceUpdate').setAttribute('aria-expanded','false');}
+  $('updateVersion').hidden=!release.supported&&!service.productVersion;
+  $('updateVersion').textContent='派板 · Paiban · 当前版本 '+(service.productVersion??'未知')+(release.available?' · 最新版 '+release.version:'');
+  $('downloadOfficialUpdate').hidden=service.productInstalled===true;
   $('checkUpdate').hidden=!release.supported;
   $('updateStatus').hidden=!release.supported&&release.status!=='error';
-  $('updatePluginHint').hidden=!release.available&&!waiting;
+  $('updatePluginHint').hidden=!waiting;
   $('updateNotes').hidden=!release.available;
   $('updateNotes').textContent=release.available?'更新说明：\n'+release.notes:'';
-  const checkMessage=release.status==='error'?(release.supported?'检查更新失败，可以稍后重试。':release.message):release.status==='idle'?'尚未检查更新。':release.available?'发现新版本，点击一键升级开始下载。':'当前没有可用更新。';
+  const checkMessage=release.status==='error'?(release.message||'检测升级失败，可以稍后重试。'):release.status==='idle'?'从派板官方 GitHub Releases 检测。':release.available?(service.releaseApplySupported?'发现新版本，可点击一键升级。':'发现新版本，可下载官方安装包。'):'当前没有可用更新。';
   $('updateStatus').textContent=waiting?'等待升级：'+(maintenance.reason||'正在等待安全条件')+'。可以取消等待。':maintenance?.kind==='product-update'&&maintenance.error?'升级未完成：'+maintenance.error:updateMessage||checkMessage;
   $('checkUpdate').disabled=updateBusy||waiting||!!service.restarting;
-  $('applyUpdate').hidden=!release.available||waiting;
+  $('applyUpdate').hidden=!release.available||waiting||!service.releaseApplySupported;
   $('applyUpdate').disabled=updateBusy||!service.releaseApplySupported||!!service.restarting;
   $('cancelUpdate').hidden=!waiting;
   $('cancelUpdate').disabled=updateBusy||!!service.restarting;
-  if(release.available&&!service.releaseApplySupported&&!waiting&&!updateMessage)$('updateStatus').textContent='当前启动方式不支持升级，请使用安装版启动入口。';
 }
 async function updateAction(action){
   if(updateBusy)return;

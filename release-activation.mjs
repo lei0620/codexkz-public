@@ -3,7 +3,7 @@ import path from 'node:path';
 import {randomUUID} from 'node:crypto';
 import {ownsDataLock} from './data-lock.mjs';
 import {safeLocalPath} from './maintenance-policy.mjs';
-import {separateRoots} from './migration-files.mjs';
+import {installedDataRoot} from './installed-paths.mjs';
 import {installedReleaseConfig} from './release-config.mjs';
 import {verifyInstalledProgram} from './installed-integrity.mjs';
 import {verifyBackupMatchesSource} from './installed-migration.mjs';
@@ -16,7 +16,7 @@ import {parseSource} from './json-safe.mjs';
 const exact=(value,keys)=>value&&typeof value==='object'&&!Array.isArray(value)&&Object.keys(value).sort().join(',')===[...keys].sort().join(',');
 function context(installRoot,dataRoot,lease){
   if(!path.isAbsolute(installRoot??'')||!path.isAbsolute(dataRoot??''))throw Error('安装和数据目录必须是绝对路径');
-  installRoot=safeLocalPath(installRoot,{directory:true});dataRoot=safeLocalPath(dataRoot,{directory:true});separateRoots(installRoot,dataRoot);
+  installRoot=safeLocalPath(installRoot,{directory:true});dataRoot=installedDataRoot(installRoot,dataRoot);
   if(!ownsDataLock(lease,path.join(dataRoot,'data')))throw Error('版本切换需要持有对应的数据锁');return {installRoot,dataRoot};
 }
 function transaction(dataRoot,lease,id){const matches=listReleaseTransactions({root:dataRoot,lease}).filter(row=>row.id===id);if(matches.length!==1)throw Error('升级记录不存在');return matches[0];}

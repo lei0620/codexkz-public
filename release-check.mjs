@@ -8,7 +8,7 @@ export async function checkRelease({publicKey,version,platform,arch,fetchImpl=fe
   const controller=new AbortController(),timer=setTimeout(()=>controller.abort(),timeoutMs);
   try{
     const response=await fetchReleaseResponse(RELEASE_MANIFEST_URL,{fetchImpl,signal:controller.signal,accept:'application/json'});
-    if(!response.ok||!response.body)throw Error('检查更新失败：HTTP '+response.status);
+    if(!response.ok||!response.body)throw Object.assign(Error('检查更新失败：HTTP '+response.status),{status:response.status});
     const length=response.headers.get('content-length');
     if(length!==null&&(!/^\d+$/.test(length)||Number(length)>MAX_ENVELOPE))throw Error('更新信息过大');
     const chunks=[];let size=0;

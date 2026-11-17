@@ -877,13 +877,24 @@ body.workspace-settings-open main > footer { display:none !important; }
 #workspaceConfig.settings { max-width:680px;margin:0 auto;padding:0;border:0;background:none;box-shadow:none; }
 #workspaceConfig > summary { display:none; }
 #workspaceConfig [hidden] { display:none !important; }
-.workspace-panel-heading { display:flex;align-items:center;justify-content:space-between;gap:12px;margin:4px 0 16px; }
+.workspace-panel-heading { position:sticky;top:0;z-index:3;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:6px;margin:0 0 12px;padding:6px 0;background:var(--page-start); }
 .workspace-panel-heading h1 { margin:0;font-size:20px;line-height:1.4; }
-.workspace-panel-heading button { min-height:32px;padding:5px 14px; }
+.workspace-panel-heading button { min-height:32px;padding:5px 9px; }
+#workspaceSettingsNav { display:flex;flex:1 0 auto;justify-content:center;gap:2px; }
+#workspaceSettingsNav button { padding-inline:5px;border-color:transparent;box-shadow:none;background:transparent; }
+#workspaceSettingsNav button[aria-pressed="true"] { border-color:var(--panel-border);background:var(--surface);color:var(--ink);font-weight:600; }
+#workspaceSettingsNav button:focus-visible { outline:2px solid currentColor;outline-offset:1px; }
+@media (max-width:290px) {
+  #workspaceSettingsNav { order:1;flex-basis:100%;justify-content:flex-start;flex-wrap:wrap; }
+}
 #workspaceConfig .hub-settings { display:grid;grid-template-columns:minmax(0,1fr);gap:12px;padding:0; }
 #workspaceConfig .hub-settings > form,
 #workspaceConfig #productUpdate,
+#workspaceConfig #storageSettings,
 #workspaceConfig .workspace-advanced { min-width:0;margin:0;padding:16px;border:1px solid #fff;border-radius:20px;background:#fff;box-shadow:var(--surface-shadow); }
+#storageSettings form { display:grid;gap:6px;margin:0;padding:0;box-shadow:none; }
+#storageSettings form button { justify-self:start; }
+#storageSettings [role="status"]:empty { display:none; }
 #diagnosticDialog { width:min(720px,calc(100vw - 32px));max-height:90vh; }
 .diagnostic-rows { max-height:60vh;overflow:auto;overflow-wrap:anywhere; }
 .diagnostic-row { border-top:1px solid var(--line,#e5e7eb);padding:12px 0; }
@@ -916,6 +927,7 @@ body.workspace-settings-open main > footer { display:none !important; }
 #setupGuide [role="status"]:empty { display:none; }
 #workspaceConfig .workspace-advanced > form { margin:16px 0 0;padding:16px 0 0;border:0;border-top:1px solid #eceeef;border-radius:0;background:none;box-shadow:none; }
 #workspaceConfig .product-update-actions { display:flex;flex-wrap:wrap;gap:8px; }
+#downloadOfficialUpdate { align-self:center;font-size:12px; }
 #workspaceConfig .product-support-code { display:block;max-width:min(100%,240px);height:auto;margin-top:12px; }
 #workspaceConfig #updateNotes { white-space:pre-wrap;overflow-wrap:anywhere; }
 #workspaceConfig .workspace-sync-actions { display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap; }
@@ -924,6 +936,8 @@ body.workspace-settings-open main > footer { display:none !important; }
 #workspaceConfig #deviceForm > button { margin-top:12px; }
 #workspaceConfig .hint,#workspaceConfig .project-path { overflow-wrap:anywhere; }
 @media(forced-colors:active) {
+  .workspace-panel-heading { background:Canvas; }
+  #workspaceSettingsNav button[aria-pressed="true"] { border-color:Highlight;background:Highlight;color:HighlightText; }
   #workspaceConfig .hub-settings > form,#workspaceConfig .workspace-advanced { background:Canvas;border:1px solid CanvasText;box-shadow:none; }
   #workspaceConfig .workspace-option,#workspaceConfig .workspace-advanced > form { border-color:CanvasText; }
   #workspaceConfig .workspace-option > summary { color:CanvasText; }

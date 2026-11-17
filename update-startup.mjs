@@ -1,7 +1,7 @@
 import path from 'node:path';
 import {ownsDataLock} from './data-lock.mjs';
 import {safeLocalPath} from './maintenance-policy.mjs';
-import {separateRoots} from './migration-files.mjs';
+import {installedDataRoot} from './installed-paths.mjs';
 import {installedReleaseConfig} from './release-config.mjs';
 import {verifyInstalledProgram} from './installed-integrity.mjs';
 import {inspectActiveVersion} from './release-activation.mjs';
@@ -11,7 +11,7 @@ import {verifyStagedRelease} from './release-staging.mjs';
 
 async function candidate({installRoot,dataRoot,programRoot,lease,id}){
   for(const value of [installRoot,dataRoot,programRoot])if(!path.isAbsolute(value??''))throw Error('安装、数据和程序目录必须是绝对路径');
-  installRoot=safeLocalPath(installRoot,{directory:true});dataRoot=safeLocalPath(dataRoot,{directory:true});programRoot=safeLocalPath(programRoot,{directory:true});separateRoots(installRoot,dataRoot);
+  installRoot=safeLocalPath(installRoot,{directory:true});dataRoot=installedDataRoot(installRoot,dataRoot);programRoot=safeLocalPath(programRoot,{directory:true});
   if(!ownsDataLock(lease,path.join(dataRoot,'data')))throw Error('新版本启动核对需要数据锁');
   const pending=listReleaseTransactions({root:dataRoot,lease}).filter(tx=>!['confirmed','cancelled','rolled-back'].includes(tx.phase));
   if(pending.length!==1||pending[0].id!==id||pending[0].phase!=='switching')throw Error('升级记录不匹配或不处于待启动阶段');

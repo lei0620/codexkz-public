@@ -32,6 +32,6 @@ export class ReleaseScheduler{
       if(previous.version&&view.version&&compareReleaseVersions(view.version,previous.version)<0)throw Error('发行清单版本倒退');
       if(previous.version===view.version&&record.envelope?.payload!==result.envelope.payload)throw Error('相同版本的发行内容发生变化');
       await this.write(next);return {status:'checked',...view};
-    }catch{return {status:'error',...previous};}
+    }catch(error){return {status:'error',...previous,...(error?.status===404?{message:'GitHub Releases 暂未提供更新清单。'}:{})};}
   }
 }

@@ -12,6 +12,7 @@ import {verifyInstalledProgram} from '../installed-integrity.mjs';
 import {configuredBackupRoot} from '../backup-roots.mjs';
 import {backupRestartState} from '../restart.mjs';
 import {codexCommand} from '../codex-catalog-fallback.mjs';
+import {readInstalledDataRoot} from '../installed-paths.mjs';
 
 const script=fileURLToPath(import.meta.url);
 const initialProgram=path.dirname(path.dirname(script));
@@ -133,7 +134,8 @@ async function serve(port){
 
 const [action,argument,...extra]=process.argv.slice(2);
 if(extra.length)throw Error('派板插件参数无效');
-if(action==='register'&&path.isAbsolute(argument??''))registerMarketplace(argument);
+if(action==='location')console.log(readInstalledDataRoot(installRoot,argument));
+else if(action==='register'&&path.isAbsolute(argument??''))registerMarketplace(argument);
 else if(action==='create'||action==='serve'){
   const port=argument===undefined?undefined:Number(argument);
   if(port!==undefined&&(!/^\d{4,5}$/.test(argument)||!validPort(port)))throw Error('派板插件端口无效');

@@ -61,6 +61,8 @@ import {openPanelSqliteStore} from './panel-sqlite-store.mjs';
 import {PanelQueries,conditionalJSON} from './panel-queries.mjs';
 import {NativePanelSessions} from './native-panel.mjs';
 import {installedReleaseConfig} from './release-config.mjs';
+import {installedBackupRoot,installedDataRoot} from './installed-paths.mjs';
+import {safeLocalPath} from './maintenance-policy.mjs';
 import {releaseCheckStore} from './release-check-store.mjs';
 import {ReleaseScheduler} from './release-scheduler.mjs';
 import {stageRelease,verifyStagedRelease} from './release-staging.mjs';
@@ -80,6 +82,7 @@ const separateData=root!==programRoot;
 const launchId=separateData&&options.installRoot&&/^[a-f0-9]{32}$/.test(process.env.PAIBAN_LAUNCH_ID??'')?process.env.PAIBAN_LAUNCH_ID:'';
 if(options.dataRoot&&!separateData)throw Error('独立数据目录不能与程序目录相同');
 if(separateData){
+  if(options.installRoot)installedDataRoot(options.installRoot,root);
   const within=(parent,child)=>{const relative=path.relative(parent,child);return !relative||!relative.startsWith('..'+path.sep)&&relative!=='..'&&!path.isAbsolute(relative);};
   if(within(root,programRoot)||within(programRoot,root))throw Error('独立数据目录和程序目录不能相互包含');
   if(options.storageBackend==='sqlite')throw Error('独立数据目录暂不支持隔离 SQLite 入口');
@@ -192,10 +195,10 @@ const executionInspections=new Map(),executionReads=new ExecutionReadChecks({tra
 const executionRead=(key,read)=>executionReads.run(key,read);
 let restarting=false,restartChecking=false,closing=false,closePromise,activeRequests=0;const instanceId=randomUUID(),startedAt=new Date().toISOString();
 let releaseConfig=options.releaseUpdate??null,releaseConfigError='';
-if(separateData&&options.releaseUpdate===undefined)try{releaseConfig=installedReleaseConfig(programRoot);if(!releaseConfig)releaseConfigError='发行配置缺失，无法检查更新';}catch{releaseConfigError='发行配置无效，无法检查更新';}
-if(!separateData)releaseConfig=null;
+if((separateData||programRoot===moduleRoot)&&options.releaseUpdate===undefined)try{releaseConfig=installedReleaseConfig(programRoot);if(separateData&&!releaseConfig)releaseConfigError='发行配置缺失，无法检查更新';}catch{releaseConfigError='发行配置无效，无法检查更新';}
 const releaseScheduler=releaseConfig?new ReleaseScheduler({...releaseConfig,...releaseCheckStore(root)}):null;
 let releaseStatus={supported:!!releaseScheduler,status:releaseConfigError?'error':'idle',...(releaseConfigError?{message:releaseConfigError}:{})};
+const productCapabilities=()=>({dataLocationSupported:typeof options.requestRelocation==='function',dataLocationError:options.relocationError??'',productInstalled:separateData,productVersion:releaseConfig?.version??null,releaseApplySupported:separateData&&!!releaseScheduler&&typeof options.requestUpdate==='function',releaseCheck:releaseStatus});
 let releaseStage=null,releaseStageProof=null,releaseStaging=null;
 async function checkProductRelease(manual=false){
   if(!releaseScheduler)throw Error(releaseConfigError||'当前运行方式不支持产品更新');
@@ -204,6 +207,7 @@ async function checkProductRelease(manual=false){
   catch{releaseStatus={supported:true,status:'error',message:'更新检查记录不可用，请稍后重试'};return releaseStatus;}
 }
 function stageProductRelease(){
+  if(!separateData)throw Error('请在 Windows 安装版执行一键升级');
   if(!releaseScheduler)throw Error(releaseConfigError||'当前运行方式不支持产品更新');
   if(closing||restarting)throw Error('面板正在关闭或重启，请稍后操作');
   if(releaseStaging)return releaseStaging;
@@ -673,7 +677,7 @@ function statusView(nativeSession){
   return {...publicCatalog(nativeSession),bindings:state.bindings,workspace:workspaceView(state,catalog.projects),boards:sidecars.snapshot(),workflowChecks:state.workflowChecks??{},caller:state.caller,token,connectionError,lastSync,
     tasks:[],jobs:[],legacyJobs:[],taskSections:[],planIntakes:[],versionRecords:[],versionIntakes:[],propertyGroups:state.propertyGroups??{},automation:{plans:[],routes:[]},capture:{...capture,events:[]},
     projectTransfers:projectTransferView(),sync:{config:state.sync.config,conflicts:[],lastSync:state.sync.lastSync,error:state.sync.error,running:syncRunning,automatic:autoSync.snapshot(),inbox:state.sync.base.filter(r=>!r.deleted&&!Object.values(state.workspace.mappings).some(m=>m.logicalId===r.logicalId)).map(({id,logicalId})=>({id,logicalId}))},
-    service:{instanceId,startedAt,restarting,backupConfigSupported:true,productVersion:releaseConfig?.version??null,releaseApplySupported:!!releaseScheduler&&typeof options.requestUpdate==='function',releaseCheck:releaseStatus,nativeMcpSupported:true,nativeBootstrapSupported:true,executionRecoverySupported:true,automaticRecoverySupported:true,scopedActivityRecoverySupported:true,automaticUncertainReleaseSupported:true,safeReadRecoverySupported:true,versionDeleteSupported:true,manualTaskAcceptanceSupported:true,manualPausedExecutionSupported:true,boundedThreadReadSupported:true,diagnosticsSupported:true,desktopCheckSupported:true,desktopContextSupported:true,desktopContextFastCheckSupported:true,desktopContextThreadLookupSupported:true,desktopContextDiagnostics:desktopContext.diagnostics(),connectionDiagnostics:bridge.diagnostics?.()??null,catalogHealthSupported:true,catalogRecoverySupported:true,backgroundChecksSupported:true,catalogHealth:catalogHealth.snapshot(),storage:repository.inspect(),restartSupported:typeof options.requestRestart==='function',maintenanceSupported:true,executionScopesSupported:true,intelligentDispatchSupported:true,asyncStorageSupported:true,projectSyncSupported:true,directProjectSyncSupported:true,nativeProjectSyncSupported:true,projectTransferSupported:true,workflowTasksSupported:true,taskHandoffSupported:true,projectSyncSending:directSync.snapshot(),querySupported:true,modelRoutingSupported:true,modelSeriesRoutingSupported:true,cleanDispatchSupported:true,taskContentSupported:true,composerSupported:true,currentThreadSendSupported:true,directThreadMessageSupported:true,nativeComposerSendSupported:true,composerReceiptLookupSupported:true,projectReferencesSupported:true,projectReferenceTagManagementSupported:true,projectReferenceGroupsSupported:true,projectBoardSyncSupported:true,taskGroupsSupported:true,projectBoardSupported:true,currentThreadModesSupported:true,taskRoundsSupported:true,reviewRecoverySupported:true,taskAcceptanceSupported:true,sourceBindingSupported:true,maintenance:maintenanceView(),impact:maintenanceImpact(state,catalog.projects),activeRequests}};
+    service:{instanceId,startedAt,restarting,backupConfigSupported:true,...productCapabilities(),nativeMcpSupported:true,nativeBootstrapSupported:true,executionRecoverySupported:true,automaticRecoverySupported:true,scopedActivityRecoverySupported:true,automaticUncertainReleaseSupported:true,safeReadRecoverySupported:true,versionDeleteSupported:true,manualTaskAcceptanceSupported:true,manualPausedExecutionSupported:true,boundedThreadReadSupported:true,diagnosticsSupported:true,desktopCheckSupported:true,desktopContextSupported:true,desktopContextFastCheckSupported:true,desktopContextThreadLookupSupported:true,desktopContextDiagnostics:desktopContext.diagnostics(),connectionDiagnostics:bridge.diagnostics?.()??null,catalogHealthSupported:true,catalogRecoverySupported:true,backgroundChecksSupported:true,catalogHealth:catalogHealth.snapshot(),storage:repository.inspect(),restartSupported:typeof options.requestRestart==='function',maintenanceSupported:true,executionScopesSupported:true,intelligentDispatchSupported:true,asyncStorageSupported:true,projectSyncSupported:true,directProjectSyncSupported:true,nativeProjectSyncSupported:true,projectTransferSupported:true,workflowTasksSupported:true,taskHandoffSupported:true,projectSyncSending:directSync.snapshot(),querySupported:true,modelRoutingSupported:true,modelSeriesRoutingSupported:true,cleanDispatchSupported:true,taskContentSupported:true,composerSupported:true,currentThreadSendSupported:true,directThreadMessageSupported:true,nativeComposerSendSupported:true,composerReceiptLookupSupported:true,projectReferencesSupported:true,projectReferenceTagManagementSupported:true,projectReferenceGroupsSupported:true,projectBoardSyncSupported:true,taskGroupsSupported:true,projectBoardSupported:true,currentThreadModesSupported:true,taskRoundsSupported:true,reviewRecoverySupported:true,taskAcceptanceSupported:true,sourceBindingSupported:true,maintenance:maintenanceView(),impact:maintenanceImpact(state,catalog.projects),activeRequests}};
 }
 async function ensureQueuedModel(snapshot){
   const job=snapshot.value;if(job.connectionTest&&!job.taskId)return true;
@@ -906,7 +910,7 @@ const handoffs=new HandoffCoordinator({now:refreshNow,getState:()=>state,getCata
     return initialDispatcher.start({task,project,target,assertCurrent,handoff:{id:handoffId,validateSource,buildPrompt:latest=>{const source=state.jobs.find(j=>j.id===latest.handoff.sourceJobId);return developmentPrompt({prompt,allowParallel:!!source?.allowParallel,writePaths:source?.writePaths??latest.execution?.writePaths,sectionSnapshot:source?.sectionSnapshot??state.taskSections.find(s=>s.id===latest.sectionId&&s.projectId===latest.projectId)})+sourceContext(catalog.projects.find(p=>p.projectId===latest.projectId))+attachmentPrompt(root,latest.attachments??[]);}},route:{key,baseKey:key,projectId:task.projectId,path:task.path,sectionId:task.sectionId??null,unit:task.execution?.unit??task.title,title:task.title+' · 接续',modelKey:target.modelKey,modelProvider:target.modelProvider,modelRevision:target.revision}});
   }});
 
-function restartBusy(){return !!desktopCheckFlight||!!releaseStaging||!!releaseScheduler?.pending||!!reconcilingExecutions||!!automaticSourceBinding.pending||executionReads.size>0||executionInspections.size>0||directMessages.active.size>0||!!composer.active||directSync.active.size>0||directSync.jobs().some(j=>j.status!=='queued')||pendingInitialDispatches(state).length>0||repository.inspect().queued>0||activeRequests>0||syncRunning||dispatching||ticking||refreshing||metadataRefreshing||connecting||sidecars.running||Object.values(state.threadRequests??{}).some(r=>r.status==='creating');}
+function restartBusy(allowedRequests=0){return !!desktopCheckFlight||!!releaseStaging||!!releaseScheduler?.pending||!!reconcilingExecutions||!!automaticSourceBinding.pending||executionReads.size>0||executionInspections.size>0||directMessages.active.size>0||!!composer.active||directSync.active.size>0||directSync.jobs().some(j=>j.status!=='queued')||pendingInitialDispatches(state).length>0||repository.inspect().queued>0||activeRequests>allowedRequests||syncRunning||dispatching||ticking||refreshing||metadataRefreshing||connecting||sidecars.running||Object.values(state.threadRequests??{}).some(r=>r.status==='creating');}
 function hasUnresolvedUpgradeWork(value){
   return !!directMessages.fault||Array.from(directMessages.records.values()).some(receipt=>['sending','uncertain'].includes(receipt.status))
     ||value.jobs.some(job=>job.awaitingUser||job.status==='uncertain')
@@ -1059,7 +1063,7 @@ async function handleRequest(req,res){
       }catch(error){return json(res,error.status??400,{error:error.message});}
     }
     if(url.pathname==='/api/service/health'&&req.method==='GET')return json(res,200,{instanceId,productVersion:releaseConfig?.version??null,...(launchId?{launchId}:{})});
-    if(url.pathname==='/api/state'&&req.method==='GET')return json(res,200,{...publicCatalog(),bindings:state.bindings,jobs:state.jobs,tasks:state.tasks.map(presentTask),taskSections:state.taskSections,taskGroups:Object.values(state.workspace.taskGroups??{}).flat(),planIntakes:planIntakeView(state),versionRecords:state.versionRecords.filter(v=>!v.deletedAt),versionIntakes:versionIntakeView(state),propertyGroups:state.propertyGroups??{},capture:captureSnapshot(state),automation:automationSnapshot(state),legacyJobs:state.jobs.filter(j=>!j.taskId),boards:sidecars.snapshot(),workspace:workspaceView(state,catalog.projects),projectTransfers:projectTransferView(),sync:{config:state.sync.config,conflicts:state.sync.conflicts,lastSync:state.sync.lastSync,error:state.sync.error,running:syncRunning,automatic:autoSync.snapshot(),inbox:state.sync.base.filter(r=>!r.deleted&&!Object.values(state.workspace.mappings).some(m=>m.logicalId===r.logicalId))},workflowChecks:state.workflowChecks??{},caller:state.caller,token,connectionError,lastSync,service:{instanceId,startedAt,restarting,backupConfigSupported:true,productVersion:releaseConfig?.version??null,releaseApplySupported:!!releaseScheduler&&typeof options.requestUpdate==='function',releaseCheck:releaseStatus,nativeMcpSupported:true,nativeBootstrapSupported:true,executionRecoverySupported:true,automaticRecoverySupported:true,scopedActivityRecoverySupported:true,automaticUncertainReleaseSupported:true,safeReadRecoverySupported:true,versionDeleteSupported:true,manualTaskAcceptanceSupported:true,manualPausedExecutionSupported:true,boundedThreadReadSupported:true,diagnosticsSupported:true,desktopCheckSupported:true,desktopContextSupported:true,desktopContextFastCheckSupported:true,desktopContextThreadLookupSupported:true,desktopContextDiagnostics:desktopContext.diagnostics(),connectionDiagnostics:bridge.diagnostics?.()??null,catalogHealthSupported:true,catalogRecoverySupported:true,backgroundChecksSupported:true,catalogHealth:catalogHealth.snapshot(),storage:repository.inspect(),restartSupported:typeof options.requestRestart==='function',maintenanceSupported:true,executionScopesSupported:true,intelligentDispatchSupported:true,asyncStorageSupported:true,projectSyncSupported:true,directProjectSyncSupported:true,nativeProjectSyncSupported:true,projectTransferSupported:true,workflowTasksSupported:true,taskHandoffSupported:true,projectSyncSending:directSync.snapshot(),modelRoutingSupported:true,modelSeriesRoutingSupported:true,cleanDispatchSupported:true,taskContentSupported:true,composerSupported:true,currentThreadSendSupported:true,directThreadMessageSupported:true,nativeComposerSendSupported:true,composerReceiptLookupSupported:true,projectReferencesSupported:true,projectReferenceTagManagementSupported:true,projectReferenceGroupsSupported:true,projectBoardSyncSupported:true,taskGroupsSupported:true,projectBoardSupported:true,currentThreadModesSupported:true,taskRoundsSupported:true,reviewRecoverySupported:true,taskAcceptanceSupported:true,sourceBindingSupported:true,maintenance:maintenanceView(),impact:maintenanceImpact(state,catalog.projects),activeRequests}});
+    if(url.pathname==='/api/state'&&req.method==='GET')return json(res,200,{...publicCatalog(),bindings:state.bindings,jobs:state.jobs,tasks:state.tasks.map(presentTask),taskSections:state.taskSections,taskGroups:Object.values(state.workspace.taskGroups??{}).flat(),planIntakes:planIntakeView(state),versionRecords:state.versionRecords.filter(v=>!v.deletedAt),versionIntakes:versionIntakeView(state),propertyGroups:state.propertyGroups??{},capture:captureSnapshot(state),automation:automationSnapshot(state),legacyJobs:state.jobs.filter(j=>!j.taskId),boards:sidecars.snapshot(),workspace:workspaceView(state,catalog.projects),projectTransfers:projectTransferView(),sync:{config:state.sync.config,conflicts:state.sync.conflicts,lastSync:state.sync.lastSync,error:state.sync.error,running:syncRunning,automatic:autoSync.snapshot(),inbox:state.sync.base.filter(r=>!r.deleted&&!Object.values(state.workspace.mappings).some(m=>m.logicalId===r.logicalId))},workflowChecks:state.workflowChecks??{},caller:state.caller,token,connectionError,lastSync,service:{instanceId,startedAt,restarting,backupConfigSupported:true,...productCapabilities(),nativeMcpSupported:true,nativeBootstrapSupported:true,executionRecoverySupported:true,automaticRecoverySupported:true,scopedActivityRecoverySupported:true,automaticUncertainReleaseSupported:true,safeReadRecoverySupported:true,versionDeleteSupported:true,manualTaskAcceptanceSupported:true,manualPausedExecutionSupported:true,boundedThreadReadSupported:true,diagnosticsSupported:true,desktopCheckSupported:true,desktopContextSupported:true,desktopContextFastCheckSupported:true,desktopContextThreadLookupSupported:true,desktopContextDiagnostics:desktopContext.diagnostics(),connectionDiagnostics:bridge.diagnostics?.()??null,catalogHealthSupported:true,catalogRecoverySupported:true,backgroundChecksSupported:true,catalogHealth:catalogHealth.snapshot(),storage:repository.inspect(),restartSupported:typeof options.requestRestart==='function',maintenanceSupported:true,executionScopesSupported:true,intelligentDispatchSupported:true,asyncStorageSupported:true,projectSyncSupported:true,directProjectSyncSupported:true,nativeProjectSyncSupported:true,projectTransferSupported:true,workflowTasksSupported:true,taskHandoffSupported:true,projectSyncSending:directSync.snapshot(),modelRoutingSupported:true,modelSeriesRoutingSupported:true,cleanDispatchSupported:true,taskContentSupported:true,composerSupported:true,currentThreadSendSupported:true,directThreadMessageSupported:true,nativeComposerSendSupported:true,composerReceiptLookupSupported:true,projectReferencesSupported:true,projectReferenceTagManagementSupported:true,projectReferenceGroupsSupported:true,projectBoardSyncSupported:true,taskGroupsSupported:true,projectBoardSupported:true,currentThreadModesSupported:true,taskRoundsSupported:true,reviewRecoverySupported:true,taskAcceptanceSupported:true,sourceBindingSupported:true,maintenance:maintenanceView(),impact:maintenanceImpact(state,catalog.projects),activeRequests}});
     if(url.pathname.startsWith('/api/')){
       if(req.method!=='POST'||req.headers['x-panel-token']!==token)return json(res,403,{error:'请求验证失败，请刷新面板'});
       if(restarting)return json(res,503,{error:'面板正在重启，请等待重连'});
@@ -1101,7 +1105,23 @@ async function handleRequest(req,res){
       if(url.pathname==='/api/service/backup-config'){
         if(!b||Array.isArray(b)||Object.keys(b).some(key=>key!=='backupRoot'))throw Error('备份配置参数无效');
         if(!Object.hasOwn(b,'backupRoot'))return json(res,200,{ok:true,backupRoot:configuredBackupRoot(root)});
+        if(options.installRoot)installedBackupRoot(options.installRoot,root,b.backupRoot);
         return json(res,200,{ok:true,...configureBackupRoot(root,b.backupRoot,{backup:(source,target)=>backupRestartState(source,target,'修改备份配置')})});
+      }
+      if(url.pathname==='/api/service/data-location'){
+        if(typeof options.requestRelocation!=='function')throw Error('此启动入口不能修改数据位置');
+        if(!b||Array.isArray(b)||Object.keys(b).some(key=>!['dataRoot','instanceId'].includes(key)))throw Error('数据位置参数无效');
+        if(!Object.hasOwn(b,'dataRoot'))return json(res,200,{ok:true,dataRoot:root});
+        if(b.instanceId!==instanceId)throw Error('服务实例已变化，请刷新后重试');
+        const destination=installedDataRoot(options.installRoot,b.dataRoot,{missing:true});
+        if(!path.relative(root,destination))return json(res,200,{ok:true,changed:false});
+        const parent=safeLocalPath(path.dirname(destination),{directory:true});
+        if(fs.existsSync(path.join(parent,path.basename(destination))))throw Error('请选择一个尚不存在的新数据目录');
+        installedBackupRoot(options.installRoot,destination,configuredBackupRoot(root));
+        if(productUpdateBlocked(state)||maintenanceWaiting(state)||restartBusy(1))throw Error('请等当前任务和同步结束，并暂停自动同步后再搬迁数据');
+        restarting=true;
+        res.once('finish',()=>{void options.requestRelocation(destination).catch(error=>{restarting=false;console.error(error.message);});});
+        return json(res,200,{ok:true,changed:true});
       }
       if(url.pathname==='/api/service/stage-update'){
         if(!b||Array.isArray(b)||Object.keys(b).length)throw Error('更新下载不接受额外参数');
@@ -1687,7 +1707,7 @@ autoSync.tick=()=>closing?Promise.resolve():track(syncTick());
 state=await repository.activate(state,{requireUnchanged:!!pendingStartup});
 diagnostics.observe(state);
 serve=(req,res)=>{track(handleRequest(req,res));};
-function startTimers(){if(options.autostart===false||pendingStartup||closing||timers.length)return;void lightTick().catch(()=>{});timers.push(setInterval(()=>track(collectPlans()).catch(error=>{connectionError=error.message;}),3000),setInterval(()=>void autoSync.tick(),1000),setInterval(()=>track(maintenanceTick()).catch(error=>{connectionError=error.message;}),1000),setInterval(()=>void tick(),6000),setInterval(()=>void lightTick().catch(()=>{}),1000));if(releaseScheduler){void track(checkProductRelease(false)).catch(()=>{});timers.push(setInterval(()=>void track(checkProductRelease(false)).catch(()=>{}),60*60*1000));}for(const timer of timers)timer.unref();}
+function startTimers(){if(options.autostart===false||pendingStartup||closing||timers.length)return;void lightTick().catch(()=>{});timers.push(setInterval(()=>track(collectPlans()).catch(error=>{connectionError=error.message;}),3000),setInterval(()=>void autoSync.tick(),1000),setInterval(()=>track(maintenanceTick()).catch(error=>{connectionError=error.message;}),1000),setInterval(()=>void tick(),6000),setInterval(()=>void lightTick().catch(()=>{}),1000));if(separateData&&releaseScheduler){void track(checkProductRelease(false)).catch(()=>{});timers.push(setInterval(()=>void track(checkProductRelease(false)).catch(()=>{}),60*60*1000));}for(const timer of timers)timer.unref();}
 startTimers();
 async function confirmStartup(){
   if(!pendingStartup)throw Error('没有待确认的升级启动');
@@ -1722,25 +1742,27 @@ return {origin,refresh,refreshMetadata,lightTick,tick,autoSync,maintenanceTick,c
 export async function runPanelProcess(options={}){
   let stopping;
   const finish=()=>{for(const signal of ['SIGINT','SIGTERM'])process.removeListener(signal,stop);process.removeListener('message',message);process.removeListener('disconnect',stop);if(process.connected)process.disconnect();};
-  const shutdown=(restart=false,updateId=null)=>stopping??=(async()=>{
+  const shutdown=(restart=false,updateId=null,destination=null)=>stopping??=(async()=>{
     const app=await starting;
     await app.close();
     if(restart&&process.connected)await new Promise((resolve,reject)=>process.send({type:'panel-restart-ready'},error=>error?reject(error):resolve()));
     if(updateId&&process.connected)await new Promise((resolve,reject)=>process.send({type:'panel-update-ready',id:updateId},error=>error?reject(error):resolve()));
+    if(destination&&process.connected)await new Promise((resolve,reject)=>process.send({type:'panel-relocation-ready',destination},error=>error?reject(error):resolve()));
     finish();
   })();
   const stop=()=>{void shutdown().catch(error=>{console.error(error.message);process.exitCode=1;finish();});};
   const message=value=>{if(value?.type==='panel-stop')stop();};
   const requestRestart=typeof process.send==='function'?()=>shutdown(true):undefined;
   const requestUpdate=typeof process.send==='function'&&options.installRoot&&options.dataRoot?({id})=>shutdown(false,id):undefined;
+  const requestRelocation=typeof process.send==='function'&&options.installRoot&&options.dataRoot&&process.env.PAIBAN_DATA_LOCATION_SUPPORTED==='1'?destination=>shutdown(false,null,destination):undefined;
   for(const signal of ['SIGINT','SIGTERM'])process.on(signal,stop);
   process.on('message',message);process.on('disconnect',stop);
-  const starting=createPanel({activityScope:'panel',...options,requestRestart,requestUpdate});
+  const starting=createPanel({activityScope:'panel',...options,requestRestart,requestUpdate,requestRelocation});
   try{const app=await starting;if(options.pendingUpdate){try{await app.confirmPendingUpdate();if(process.connected)await new Promise((resolve,reject)=>process.send({type:'panel-update-confirmed'},error=>error?reject(error):resolve()));}catch(error){await app.close();throw error;}}return app;}catch(error){finish();throw error;}
 }
 if(process.argv[1]&&path.resolve(process.argv[1])===fileURLToPath(import.meta.url)){
   const dataRoot=process.env.CODEXKZ_INSTALLED_DATA_ROOT;
   const pendingId=process.env.CODEXKZ_PENDING_UPDATE,installRoot=process.env.CODEXKZ_INSTALL_ROOT;
   if(pendingId&&!installRoot)throw Error('待确认升级参数不完整');
-  runPanelProcess({...dataRoot?{dataRoot}:{},...installRoot?{installRoot}:{},...pendingId?{pendingUpdate:{id:pendingId,installRoot}}:{}}).then(app=>console.log(`Codex 项目调度台：${app.origin}`)).catch(error=>{console.error(error.message);process.exitCode=1;});
+  runPanelProcess({...dataRoot?{dataRoot}:{},...installRoot?{installRoot}:{},...pendingId?{pendingUpdate:{id:pendingId,installRoot}}:{},relocationError:process.env.PAIBAN_RELOCATION_ERROR}).then(app=>console.log(`Codex 项目调度台：${app.origin}`)).catch(error=>{console.error(error.message);process.exitCode=1;});
 }

@@ -23,6 +23,8 @@ Once released, download the Windows x64 installer from [GitHub Releases](https:/
 
 On first launch, select Start setup and connect to the signed-in Codex desktop app using a chat link or ID. To open a board inside a Codex chat, select 接入 Codex 白板 (Connect Codex board) from the Windows Start menu and reopen Codex when prompted. Set up a private repository only if you need cross-device sync.
 
+Data and backups are stored in the `userdata` and `backups` subdirectories of the installation folder. Change either location under Settings → Data.
+
 ### Source development
 
 You need Windows, Node.js 22.13 or later, PowerShell 7, and a running Codex desktop app signed in to your account. The source version has no project dependencies to install.
@@ -40,9 +42,9 @@ You need Windows, Node.js 22.13 or later, PowerShell 7, and a running Codex desk
 
 ## Updates
 
-Paiban is currently available as source code on GitHub. Back up `data/` and review any local changes before updating. Get the latest source from this repository and reload it using Settings → Advanced Settings → Restart Panel. For guidance, open Settings → About & Updates → View update instructions.
+Open Settings → Updates and select Check for upgrades to check the official Paiban release. The installed Windows app can apply an available update in one click. The installer is pending release. For source development, back up `data/` and review local changes before updating this checkout and restarting Paiban.
 
-The Windows installer and in-app upgrades are pending release.
+If you maintain your own distribution, set your release repository in [release-manifest.mjs](release-manifest.mjs), configure the version and public signing key in [product-release.json](product-release.json), and use the same public key when building the installer.
 
 ## Data and compatibility
 

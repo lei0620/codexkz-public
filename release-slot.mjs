@@ -6,7 +6,7 @@ import {promisify} from 'node:util';
 import {fileURLToPath} from 'node:url';
 import {ownsDataLock} from './data-lock.mjs';
 import {safeLocalPath} from './maintenance-policy.mjs';
-import {separateRoots} from './migration-files.mjs';
+import {installedDataRoot} from './installed-paths.mjs';
 import {installedReleaseConfig} from './release-config.mjs';
 import {verifyInstalledProgram} from './installed-integrity.mjs';
 import {verifyStagedRelease} from './release-staging.mjs';
@@ -31,9 +31,8 @@ function directory(parent,name){
 // the maintenance gate, journal, pointer switch and startup/recovery protocol.
 export async function prepareInstalledVersion({installRoot,dataRoot,currentProgram,stageId,lease,powershellPath}){
   for(const value of [installRoot,dataRoot,currentProgram,powershellPath])if(!path.isAbsolute(value??''))throw Error('安装、数据和运行时路径必须是绝对路径');
-  installRoot=safeLocalPath(installRoot,{directory:true});dataRoot=safeLocalPath(dataRoot,{directory:true});currentProgram=safeLocalPath(currentProgram,{directory:true});
+  installRoot=safeLocalPath(installRoot,{directory:true});dataRoot=installedDataRoot(installRoot,dataRoot);currentProgram=safeLocalPath(currentProgram,{directory:true});
   powershellPath=safeLocalPath(powershellPath);ordinary(powershellPath);
-  separateRoots(installRoot,dataRoot);
   if(!ownsDataLock(lease,path.join(dataRoot,'data')))throw Error('准备版本需要持有对应的数据锁');
   const relative=path.relative(installRoot,currentProgram).replaceAll('\\','/');
   if(relative!=='program'&&!/^versions\/v(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)\/program$/.test(relative))throw Error('当前程序不属于安装目录');

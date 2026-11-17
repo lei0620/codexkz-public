@@ -18,7 +18,7 @@ export function migrationRoot(root,{missing=false}={}){
   return real;
 }
 export function separateRoots(source,target){
-  const contains=(a,b)=>{const relative=path.relative(a,b);return !relative||!relative.startsWith('..')&&!path.isAbsolute(relative);};
+  const contains=(a,b)=>{const relative=path.relative(a,b);return relative!=='..'&&!relative.startsWith('..'+path.sep)&&!path.isAbsolute(relative);};
   if(contains(source,target)||contains(target,source))throw migrationError('TARGET_CONFLICT','来源与输出目录必须彼此独立，不能覆盖或嵌套');
 }
 export function managedPath(root,relative,{missing=false}={}){

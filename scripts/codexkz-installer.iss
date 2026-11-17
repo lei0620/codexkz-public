@@ -62,27 +62,39 @@ WelcomeLabel2=派板需要已安装并运行的 Codex 桌面应用。%n%n请先�
 
 [Code]
 var
-  PathsPage: TInputDirWizardPage;
   SourcePage: TInputDirWizardPage;
   ModePage: TInputOptionWizardPage;
   ConnectPage: TOutputMsgMemoWizardPage;
+  DataOverride, BackupOverride: String;
 
 function CreateDirectoryExclusive(Path: String; SecurityAttributes: LongWord): Boolean;
   external 'CreateDirectoryW@kernel32.dll stdcall';
 
+function DataDirectory: String;
+begin
+  if DataOverride <> '' then Result := DataOverride
+  else Result := ExpandConstant('{app}\userdata');
+end;
+
+function BackupDirectory: String;
+begin
+  if BackupOverride <> '' then Result := BackupOverride
+  else Result := ExpandConstant('{app}\backups');
+end;
+
 function LauncherArguments(Param: String): String;
 begin
-  Result := '-NoProfile -WindowStyle Hidden -File ' + AddQuotes(ExpandConstant('{app}\program\scripts\installed-launch.ps1')) + ' -DataRoot ' + AddQuotes(PathsPage.Values[0]) + ' -OpenBrowser';
+  Result := '-NoProfile -WindowStyle Hidden -File ' + AddQuotes(ExpandConstant('{app}\program\scripts\installed-launch.ps1')) + ' -DataRoot ' + AddQuotes(DataDirectory) + ' -OpenBrowser';
 end;
 
 function ConnectArguments(Param: String): String;
 begin
-  Result := '-NoProfile -WindowStyle Hidden -File ' + AddQuotes(ExpandConstant('{app}\program\scripts\installed-launch.ps1')) + ' -DataRoot ' + AddQuotes(PathsPage.Values[0]) + ' -ConnectCodex';
+  Result := '-NoProfile -WindowStyle Hidden -File ' + AddQuotes(ExpandConstant('{app}\program\scripts\installed-launch.ps1')) + ' -DataRoot ' + AddQuotes(DataDirectory) + ' -ConnectCodex';
 end;
 
 function RecoveryArguments(Param: String): String;
 begin
-  Result := '-NoProfile -NoExit -File ' + AddQuotes(ExpandConstant('{app}\program\scripts\installed-recover.ps1')) + ' -DataRoot ' + AddQuotes(PathsPage.Values[0]);
+  Result := '-NoProfile -NoExit -File ' + AddQuotes(ExpandConstant('{app}\program\scripts\installed-recover.ps1')) + ' -DataRoot ' + AddQuotes(DataDirectory);
 end;
 
 function SafeAbsoluteDirectory(Value: String): Boolean;
@@ -124,7 +136,7 @@ begin
 end;
 
 procedure InitializeWizard;
-var DataArg, BackupArg, SourceArg: String;
+var SourceArg: String;
 begin
   SourceArg := ExpandConstant('{param:SourceRoot|}');
   ModePage := CreateInputOptionPage(wpSelectDir, '选择安装方式',
@@ -133,22 +145,13 @@ begin
   ModePage.Add('迁移旧源码项目数据');
   ModePage.Values[0] := SourceArg = '';
   ModePage.Values[1] := SourceArg <> '';
-  PathsPage := CreateInputDirPage(ModePage.ID, '数据和备份位置',
-    '程序文件与数据分开保存',
-    '请选择新的数据目录和本机备份目录。', False, '');
-  PathsPage.Add('新的数据目录：');
-  PathsPage.Add('本机备份目录：');
-  SourcePage := CreateInputDirPage(PathsPage.ID, '旧源码项目目录',
+  SourcePage := CreateInputDirPage(ModePage.ID, '旧源码项目目录',
     '请选择原项目目录', '仅在旧面板停止并且没有未决操作时迁移。', False, '');
   SourcePage.Add('旧源码项目目录：');
   ConnectPage := CreateOutputMsgMemoPage(SourcePage.ID, '打开派板',
     '安装后可以从开始菜单打开派板', '首次打开时，在网页中按步骤连接 Codex。', '');
-  DataArg := ExpandConstant('{param:DataRoot|}');
-  BackupArg := ExpandConstant('{param:BackupRoot|}');
-  if DataArg = '' then DataArg := ExpandConstant('{localappdata}\PaibanData');
-  if BackupArg = '' then BackupArg := ExpandConstant('{localappdata}\PaibanBackups');
-  PathsPage.Values[0] := DataArg;
-  PathsPage.Values[1] := BackupArg;
+  DataOverride := ExpandConstant('{param:DataRoot|}');
+  BackupOverride := ExpandConstant('{param:BackupRoot|}');
   SourcePage.Values[0] := SourceArg;
 end;
 
@@ -168,18 +171,21 @@ end;
 
 function PathProblem(CheckSource: Boolean): String;
 var AppPath, DataPath, BackupPath, SourcePath: String;
+  DefaultData, DefaultBackup: Boolean;
 begin
   Result := '';
   AppPath := ExpandConstant('{app}');
-  DataPath := PathsPage.Values[0];
-  BackupPath := PathsPage.Values[1];
+  DataPath := DataDirectory;
+  BackupPath := BackupDirectory;
+  DefaultData := CompareText(ExpandFileName(DataPath), ExpandConstant('{app}\userdata')) = 0;
+  DefaultBackup := CompareText(ExpandFileName(BackupPath), ExpandConstant('{app}\backups')) = 0;
   SourcePath := SourcePage.Values[0];
   if not SafeAbsoluteDirectory(AppPath) or not SafeAbsoluteDirectory(DataPath) or not SafeAbsoluteDirectory(BackupPath) then
     Result := '请填写获准的本机绝对路径；不使用网络路径或 E 盘。'
   else if not NoRedirectedPath(AppPath) or not NoRedirectedPath(DataPath) or not NoRedirectedPath(BackupPath) then
     Result := '目录包含重定向，未安装。'
-  else if PathsOverlap(AppPath, DataPath) or PathsOverlap(DataPath, BackupPath) or PathsOverlap(AppPath, BackupPath) then
-    Result := '程序、数据和备份目录必须彼此独立。'
+  else if (not DefaultData and PathsOverlap(AppPath, DataPath)) or PathsOverlap(DataPath, BackupPath) or (not DefaultBackup and PathsOverlap(AppPath, BackupPath)) then
+    Result := '数据和备份目录不能覆盖程序或互相包含。'
   else if CheckSource and ModePage.Values[1] and not SafeAbsoluteDirectory(SourcePath) then
     Result := '旧源码目录必须是获准的本机绝对路径。'
   else if CheckSource and ModePage.Values[1] and not NoRedirectedPath(SourcePath) then
@@ -196,7 +202,7 @@ begin
     Result := '备份目录不能是文件。'
   else if not DirExists(ExtractFileDir(AppPath)) then
     Result := '程序目录的父目录不存在，请选择已有父目录下的新目录。'
-  else if not DirExists(ExtractFileDir(DataPath)) then
+  else if not DefaultData and not DirExists(ExtractFileDir(DataPath)) then
     Result := '数据目录的父目录不存在，请选择已有父目录下的新目录。';
 end;
 
@@ -204,7 +210,7 @@ function NextButtonClick(CurPageID: Integer): Boolean;
 var Problem: String;
 begin
   Result := True;
-  if (CurPageID = PathsPage.ID) or (CurPageID = SourcePage.ID) then begin
+  if (CurPageID = ModePage.ID) or (CurPageID = SourcePage.ID) then begin
     Problem := PathProblem(CurPageID = SourcePage.ID);
     if Problem <> '' then begin MsgBox(Problem, mbError, MB_OK); Result := False; end;
   end;
@@ -226,15 +232,15 @@ begin
       RaiseException('安装文件检查失败，未初始化或覆盖数据。');
     if ModePage.Values[0] then begin
       Arguments := AddQuotes(ExpandConstant('{app}\program\scripts\initialize-installed-data.mjs')) + ' ' +
-        AddQuotes(ExpandConstant('{app}\program')) + ' ' + AddQuotes(PathsPage.Values[0]) + ' ' + AddQuotes(PathsPage.Values[1]);
+        AddQuotes(ExpandConstant('{app}\program')) + ' ' + AddQuotes(DataDirectory) + ' ' + AddQuotes(BackupDirectory);
       if not Exec(ExpandConstant('{app}\runtime\node\node.exe'), Arguments, ExpandConstant('{app}\program'), SW_HIDE, ewWaitUntilTerminated, ExitCode) or (ExitCode <> 0) then
         RaiseException('数据初始化失败；已有数据未覆盖。请保留未完成目录并检查备份位置。');
     end else begin
-      if not ForceDirectories(PathsPage.Values[1]) or not NoRedirectedPath(PathsPage.Values[1]) then
+      if not ForceDirectories(BackupDirectory) or not NoRedirectedPath(BackupDirectory) then
         RaiseException('备份目录不可用或被重定向，未迁移原数据。');
-      BackupTarget := AddBackslash(PathsPage.Values[1]) + GetDateTimeString('yyyy-mm-dd_hhnn', '-', '-') + '_数据迁移_' + GetDateTimeString('sszzz', '-', '-');
+      BackupTarget := AddBackslash(BackupDirectory) + GetDateTimeString('yyyy-mm-dd_hhnn', '-', '-') + '_数据迁移_' + GetDateTimeString('sszzz', '-', '-');
       Arguments := AddQuotes(ExpandConstant('{app}\program\scripts\migrate-installed-data.mjs')) + ' ' +
-        AddQuotes(SourcePage.Values[0]) + ' ' + AddQuotes(PathsPage.Values[0]) + ' ' + AddQuotes(BackupTarget) + ' ' + AddQuotes(PathsPage.Values[1]);
+        AddQuotes(SourcePage.Values[0]) + ' ' + AddQuotes(DataDirectory) + ' ' + AddQuotes(BackupTarget) + ' ' + AddQuotes(BackupDirectory);
       if not Exec(ExpandConstant('{app}\runtime\node\node.exe'), Arguments, ExpandConstant('{app}\program'), SW_HIDE, ewWaitUntilTerminated, ExitCode) or (ExitCode <> 0) then
         RaiseException('迁移未完成；请检查旧面板是否已正常停止并核对备份。原目录未覆盖。');
     end;

@@ -2,6 +2,12 @@
 // neither a successful check nor a refreshed page sends a task automatically.
 export function initExecutionRecovery(api){
   const failures=new Map(),inlineBusy=new Set();
+  function openProjectSettings(){
+    if(!document.body.classList.contains('workspace-settings-open'))document.getElementById('workspaceToggle')?.click();
+    document.querySelector('[data-settings-target="project"]')?.click();
+    const settings=document.getElementById('settings');
+    if(settings)settings.open=true;
+  }
   const escape=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
   function inlineState(t){
     const s=api.state(),p=s.automation?.plans.find(p=>['active','paused'].includes(p.status)&&p.nodes.some(n=>n.taskId===t.id&&!n.skipped)),n=p?.nodes.find(n=>n.taskId===t.id),j=s.jobs.find(j=>j.id===t.currentJobId);
@@ -26,7 +32,7 @@ export function initExecutionRecovery(api){
     try{const t=await api.ensure(id);if(!t||t.projectId!==project||api.projectId()!==project||api.state().service?.instanceId!==instance)return;const view=inlineState(t);if(!view?.actions.includes(kind))return;
       if(kind==='retry'){failures.delete(id);return await api.execute(id,undefined,true);}
       if(kind==='edit')return api.edit(id);if(kind==='review')return api.review(id);
-      if(kind==='settings'){if(!document.body.classList.contains('workspace-settings-open'))document.getElementById('workspaceToggle')?.click();const settings=document.getElementById('settings');if(settings)settings.open=true;return;}
+      if(kind==='settings'){openProjectSettings();return;}
       if(kind==='claim')return existing('data-release-sync',id);
       if(kind==='plan'){const p=api.state().automation.plans.find(p=>p.projectId===project&&['active','paused'].includes(p.status)&&p.nodes.some(n=>n.taskId===id&&!n.skipped));if(p)existing('data-inspect-plan',p.id);return;}
       if(kind==='open'&&view.threadId)await api.post('open',{threadId:view.threadId});
@@ -72,7 +78,7 @@ export function initExecutionRecovery(api){
     if(busy||!same(context))return;const c=context,t=task();if(!t){error.textContent='当前卡片已变化，请关闭后重新打开。';return;}
     if(c.signature!==signature(t)){update();return;}
     if(command.kind==='recheck')return check();
-    if(command.kind==='settings'){close();if(!document.body.classList.contains('workspace-settings-open'))document.getElementById('workspaceToggle')?.click();const settings=document.getElementById('settings');if(settings)settings.open=true;return;}
+    if(command.kind==='settings'){close();openProjectSettings();return;}
     if(command.kind==='edit'){close();return api.edit(c.id);}
     if(command.kind==='review'){close();return api.review(c.id);}
     if(command.kind==='plan'){const p=api.state().automation.plans.find(p=>p.projectId===c.projectId&&['active','paused'].includes(p.status)&&p.nodes.some(n=>n.taskId===c.id&&!n.skipped));if(!p){error.textContent='原安排已变化，请重新检查。';return;}close();existing('data-inspect-plan',p.id);return;}

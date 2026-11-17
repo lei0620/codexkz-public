@@ -15,6 +15,8 @@ export function initializeInstalledData({programRoot,destination,backupRoot}){
   if(path.join(parent,path.basename(destination))!==destination)throw Error('数据目录无效');
   if(fs.existsSync(destination))throw Error('数据目录已存在，未覆盖或接管');
   const backup=validateBackupRoot(destination,backupRoot);
+  fs.mkdirSync(backup,{recursive:true});
+  safeLocalPath(backup,{directory:true});
   fs.mkdirSync(destination); // Non-recursive and exclusive; concurrent attempts cannot share it.
   writeFresh(path.join(destination,'.migration-incomplete'),'数据初始化尚未完成\n');
   fs.mkdirSync(path.join(destination,'data'));

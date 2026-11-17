@@ -34,12 +34,15 @@ function Open-ExistingPanel([string]$Origin, [string]$LaunchId, [int]$Seconds) {
 }
 
 try {
+  if (-not [IO.File]::Exists($bootstrapNode) -or -not [IO.File]::Exists($bootstrapShell)) { throw '派板的运行组件缺失，请核对安装文件。' }
+  $settingsScript = Join-Path $PSScriptRoot 'installed-plugin.mjs'
+  $DataRoot = & $bootstrapNode $settingsScript location $DataRoot 2>$null
+  if ($LASTEXITCODE -ne 0 -or -not $DataRoot) { throw '无法读取派板的数据位置，请检查安装目录。' }
   if (-not [IO.Path]::IsPathFullyQualified($DataRoot) -or $DataRoot -match '^(?i:e:|\\\\)') { throw '数据目录必须是本机绝对路径。' }
   $ready = Join-Path $DataRoot '.installed-data-ready'
   if (-not [IO.File]::Exists($ready) -or [IO.File]::ReadAllText($ready) -cne "codexkz-installed-data-v1`n") { throw '数据目录初始化尚未完成。请核对安装进度和数据目录。' }
-  if (-not [IO.File]::Exists($bootstrapNode) -or -not [IO.File]::Exists($bootstrapShell)) { throw '派板的运行组件缺失，请核对安装文件。' }
   if ($ConnectCodex) {
-    $result = & $bootstrapNode (Join-Path $PSScriptRoot 'installed-plugin.mjs') register $DataRoot 2>&1
+    $result = & $bootstrapNode $settingsScript register $DataRoot 2>&1
     if ($LASTEXITCODE -ne 0) {
       $detail = ($result | ForEach-Object { [string]$_ } | Where-Object { $_ -match '^Error: .+' } | Select-Object -First 1) -replace '^Error: ', ''
       throw $(if($detail){$detail}else{'未能接入 Codex 白板，请确认 Codex 桌面应用可用。'})
@@ -82,6 +85,7 @@ try {
   $env:CODEXKZ_INSTALLED_DATA_ROOT = [IO.Path]::GetFullPath($DataRoot)
   $env:CODEXKZ_INSTALL_ROOT = $install
   $env:PAIBAN_LAUNCH_ID = $launchId
+  $env:PAIBAN_DATA_LOCATION_SUPPORTED = '1'
   $env:PORT = [string]$Port
   if ($OpenBrowser) {
     $openPage = Start-ThreadJob -ArgumentList $origin, $selected.version, $launchId -ScriptBlock {

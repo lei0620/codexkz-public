@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import {createHash} from 'node:crypto';
 import {safeLocalPath} from './maintenance-policy.mjs';
-import {separateRoots} from './migration-files.mjs';
+import {installedDataRoot} from './installed-paths.mjs';
 import {acquireDataLock} from './data-lock.mjs';
 import {installedReleaseConfig} from './release-config.mjs';
 import {verifyInstalledProgram} from './installed-integrity.mjs';
@@ -17,7 +17,7 @@ function hash(file){const digest=createHash('sha256'),fd=fs.openSync(file,'r'),b
 // stops ordinary startup until an explicit recovery action is completed.
 export async function resolveInstalledVersion({installRoot,dataRoot}){
   if(!path.isAbsolute(installRoot??'')||!path.isAbsolute(dataRoot??''))throw Error('安装和数据目录必须是绝对路径');
-  installRoot=safeLocalPath(installRoot,{directory:true});dataRoot=safeLocalPath(dataRoot,{directory:true});separateRoots(installRoot,dataRoot);
+  installRoot=safeLocalPath(installRoot,{directory:true});dataRoot=installedDataRoot(installRoot,dataRoot);
   const ready=ordinary(path.join(dataRoot,'.installed-data-ready'));
   if(fs.existsSync(path.join(dataRoot,'.migration-incomplete'))||fs.readFileSync(ready,'utf8')!=='codexkz-installed-data-v1\n')throw Error('数据尚未准备完成');
   const lease=await acquireDataLock(path.join(dataRoot,'data'));
