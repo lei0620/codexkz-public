@@ -42,7 +42,7 @@ The service listens on the loopback interface only. The source version stores ta
 
 ## License
 
-Noncommercial use is free. You are welcome to modify the project and share original or modified versions for noncommercial purposes. When sharing, credit Paiban, link to the [original project](https://github.com/lei0620/codexkz-public), and preserve the copyright notice and license. Only commercial use requires prior written permission. Contact the developer on WeChat at `Mr_Lei0620`. See the [Noncommercial Use License](LICENSE.md#english).
+Noncommercial use is free. You are welcome to modify the project and share original or modified versions for noncommercial purposes. When sharing, credit Paiban, link to the [original project](https://github.com/lei0620/paiban), and preserve the copyright notice and license. Only commercial use requires prior written permission. Contact the developer on WeChat at `Mr_Lei0620`. See the [Noncommercial Use License](LICENSE.md#english).
 
 ## Support development
 
